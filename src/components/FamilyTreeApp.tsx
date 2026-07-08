@@ -12,6 +12,7 @@ export default function FamilyTreeApp() {
   const {
     tree,
     loading,
+    autoSaveStatus,
     addMember,
     updateMember,
     deleteMember,
@@ -172,13 +173,19 @@ export default function FamilyTreeApp() {
         )}
 
         {/* Footer Actions */}
-        <div className="mt-4 md:mt-8 flex gap-3 md:gap-4">
+        <div className="mt-4 md:mt-8 flex items-center gap-3 md:gap-4">
           <button
             onClick={handleSave}
             className="flex-1 md:flex-initial bg-green-600 text-white px-4 md:px-6 py-2 md:py-3 rounded-lg hover:bg-green-700 transition font-medium text-sm md:text-base"
           >
             💾 保存
           </button>
+          {autoSaveStatus === 'saving' && (
+            <span className="text-xs md:text-sm text-gray-500">保存中...</span>
+          )}
+          {autoSaveStatus === 'saved' && (
+            <span className="text-xs md:text-sm text-green-600">✓ 自動保存済み</span>
+          )}
         </div>
       </main>
     </div>

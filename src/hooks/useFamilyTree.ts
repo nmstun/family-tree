@@ -1,15 +1,19 @@
 'use client'
 
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { FamilyTree, FamilyMember, Marriage, ParentChildRelation } from '@/types'
 import { useIndexedDB } from './useIndexedDB'
+import { wouldCreateCycle } from '@/utils/familyTreeValidation'
 
 const generateId = () => Math.random().toString(36).slice(2)
 
 export function useFamilyTree(initialTreeId?: string) {
   const [tree, setTree] = useState<FamilyTree | null>(null)
   const [loading, setLoading] = useState(true)
+  const [autoSaveStatus, setAutoSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle')
   const { isReady, saveTree, loadTree } = useIndexedDB()
+  const isInitialTreeSet = useRef(true)
+  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Initialize or create new tree
   useEffect(() => {
@@ -39,6 +43,35 @@ export function useFamilyTree(initialTreeId?: string) {
 
     initTree()
   }, [isReady, initialTreeId, loadTree])
+
+  // Auto-save: whenever the tree changes (member/relation added, updated,
+  // deleted, etc.) persist it to IndexedDB after a short debounce.
+  // The very first tree assignment (initial load/creation) is skipped
+  // since there is nothing new to save at that point.
+  useEffect(() => {
+    if (!tree || !isReady) return
+
+    if (isInitialTreeSet.current) {
+      isInitialTreeSet.current = false
+      return
+    }
+
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current)
+    }
+
+    setAutoSaveStatus('saving')
+    saveTimeoutRef.current = setTimeout(async () => {
+      const success = await saveTree(tree)
+      setAutoSaveStatus(success ? 'saved' : 'idle')
+    }, 500)
+
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current)
+      }
+    }
+  }, [tree, isReady, saveTree])
 
   // Add member
   const addMember = useCallback(
@@ -132,18 +165,41 @@ export function useFamilyTree(initialTreeId?: string) {
   )
 
   // Add parent-child relation
+  // If the parent has a spouse (or spouses), that spouse is automatically
+  // registered as a parent of the same child, so a couple only needs one
+  // of them to be linked to add the whole family relation.
   const addParentChild = useCallback(
     (parentId: string, childId: string) => {
       if (!tree) return
 
-      const relation: ParentChildRelation = {
-        parentId,
-        childId,
+      const existingRelations = tree.parentChildRelations
+      const newRelations: ParentChildRelation[] = []
+
+      const tryAddRelation = (pId: string, cId: string) => {
+        if (pId === cId) return
+        const alreadyExists = existingRelations.some(
+          (r) => r.parentId === pId && r.childId === cId
+        )
+        const alreadyQueued = newRelations.some(
+          (r) => r.parentId === pId && r.childId === cId
+        )
+        if (alreadyExists || alreadyQueued) return
+        if (wouldCreateCycle(pId, cId, [...existingRelations, ...newRelations])) return
+        newRelations.push({ parentId: pId, childId: cId })
       }
+
+      tryAddRelation(parentId, childId)
+
+      const spouseIds = tree.marriages
+        .filter((m) => m.spouse1Id === parentId || m.spouse2Id === parentId)
+        .map((m) => (m.spouse1Id === parentId ? m.spouse2Id : m.spouse1Id))
+      spouseIds.forEach((spouseId) => tryAddRelation(spouseId, childId))
+
+      if (newRelations.length === 0) return
 
       setTree({
         ...tree,
-        parentChildRelations: [...tree.parentChildRelations, relation],
+        parentChildRelations: [...existingRelations, ...newRelations],
         updatedAt: Date.now(),
       })
     },
@@ -183,6 +239,7 @@ export function useFamilyTree(initialTreeId?: string) {
   return {
     tree,
     loading,
+    autoSaveStatus,
     addMember,
     updateMember,
     deleteMember,
