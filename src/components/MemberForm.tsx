@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { FamilyMember, Gender } from '@/types'
 
 interface MemberFormProps {
@@ -17,6 +17,7 @@ export default function MemberForm({ onSubmit }: MemberFormProps) {
     notes: '',
   })
   const [photoPreview, setPhotoPreview] = useState<string | null>(null)
+  const lastNameImnputRef = useRef<HTMLInputElement>(null)
 
   const handleInputChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
@@ -67,6 +68,7 @@ export default function MemberForm({ onSubmit }: MemberFormProps) {
       notes: '',
     })
     setPhotoPreview(null)
+    lastNameImnputRef.current?.focus()
   }
 
   return (
