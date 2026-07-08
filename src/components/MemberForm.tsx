@@ -17,7 +17,7 @@ export default function MemberForm({ onSubmit }: MemberFormProps) {
     notes: '',
   })
   const [photoPreview, setPhotoPreview] = useState<string | null>(null)
-  const lastNameImnputRef = useRef<HTMLInputElement>(null)
+  const lastNameInputRef = useRef<HTMLInputElement>(null)
 
   const handleInputChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
