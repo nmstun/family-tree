@@ -9,7 +9,7 @@ const generateId = () => Math.random().toString(36).slice(2)
 export function useFamilyTree(initialTreeId?: string) {
   const [tree, setTree] = useState<FamilyTree | null>(null)
   const [loading, setLoading] = useState(true)
-  const { isReady, saveTree, loadTree, getAllTrees } = useIndexedDB()
+  const { isReady, saveTree, loadTree } = useIndexedDB()
 
   // Initialize or create new tree
   useEffect(() => {

@@ -5,11 +5,25 @@ import { useFamilyTree } from '@/hooks/useFamilyTree'
 import { exportToJSON, downloadJSON } from '@/utils/jsonExport'
 import MemberForm from './MemberForm'
 import MemberList from './MemberList'
+import RelationshipManager from './RelationshipManager'
+import FamilyTreeView from './FamilyTreeView'
 
 export default function FamilyTreeApp() {
-  const { tree, loading, addMember, updateMember, deleteMember, save } =
-    useFamilyTree()
-  const [activeTab, setActiveTab] = useState<'members' | 'view' | 'export'>('members')
+  const {
+    tree,
+    loading,
+    addMember,
+    updateMember,
+    deleteMember,
+    addMarriage,
+    removeMarriage,
+    addParentChild,
+    removeParentChild,
+    save,
+  } = useFamilyTree()
+  const [activeTab, setActiveTab] = useState<'members' | 'relations' | 'view' | 'export'>(
+    'members'
+  )
 
   if (loading || !tree) {
     return (
@@ -53,6 +67,16 @@ export default function FamilyTreeApp() {
             }`}
           >
             👥 メンバー
+          </button>
+          <button
+            onClick={() => setActiveTab('relations')}
+            className={`px-2 md:px-4 py-2 md:py-3 text-sm md:text-base font-medium border-b-2 transition whitespace-nowrap ${
+              activeTab === 'relations'
+                ? 'border-indigo-500 text-indigo-600'
+                : 'border-transparent text-gray-700 hover:text-gray-900'
+            }`}
+          >
+            🔗 関係
           </button>
           <button
             onClick={() => setActiveTab('view')}
@@ -100,14 +124,33 @@ export default function FamilyTreeApp() {
           </div>
         )}
 
+        {activeTab === 'relations' && (
+          <div>
+            <h2 className="text-lg md:text-2xl font-bold text-gray-900 mb-3 md:mb-4">
+              家族関係の設定
+            </h2>
+            <RelationshipManager
+              members={tree.members}
+              marriages={tree.marriages}
+              parentChildRelations={tree.parentChildRelations}
+              onAddMarriage={addMarriage}
+              onRemoveMarriage={removeMarriage}
+              onAddParentChild={addParentChild}
+              onRemoveParentChild={removeParentChild}
+            />
+          </div>
+        )}
+
         {activeTab === 'view' && (
           <div className="bg-white rounded-lg shadow p-4 md:p-6">
             <h2 className="text-lg md:text-2xl font-bold text-gray-900 mb-3 md:mb-4">
               家系図表示
             </h2>
-            <p className="text-sm md:text-base text-gray-600">
-              機能はまだ開発中です。メンバーの関係性を定義する機能が追加される予定です。
-            </p>
+            <FamilyTreeView
+              members={tree.members}
+              marriages={tree.marriages}
+              parentChildRelations={tree.parentChildRelations}
+            />
           </div>
         )}
 
