@@ -68,7 +68,11 @@ export default function MemberForm({ onSubmit }: MemberFormProps) {
       notes: '',
     })
     setPhotoPreview(null)
-    lastNameImnputRef.current?.focus()
+    // ブラウザは Enter キーでの送信時に送信ボタンへフォーカスを移すことがあるため、
+    // その処理が終わった後に確実に反映されるよう1ティック遅らせて実行する
+    setTimeout(() => {
+      lastNameInputRef.current?.focus()
+    }, 0)
   }
 
   return (
