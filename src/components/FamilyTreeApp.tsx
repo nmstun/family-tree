@@ -7,6 +7,7 @@ import MemberForm from './MemberForm'
 import MemberList from './MemberList'
 import RelationshipManager from './RelationshipManager'
 import FamilyTreeView from './FamilyTreeView'
+import SignOutButton from './SignOutButton'
 
 export default function FamilyTreeApp() {
   const {
@@ -50,9 +51,12 @@ export default function FamilyTreeApp() {
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
       {/* Header */}
       <header className="bg-white shadow">
-        <div className="max-w-6xl mx-auto px-3 md:px-4 py-4 md:py-6">
-          <h1 className="text-xl md:text-3xl font-bold text-gray-900">{tree.name}</h1>
-          <p className="text-xs md:text-base text-gray-600 mt-1">あなたの家系図を整理します</p>
+        <div className="max-w-6xl mx-auto px-3 md:px-4 py-4 md:py-6 flex items-start justify-between gap-3">
+          <div>
+            <h1 className="text-xl md:text-3xl font-bold text-gray-900">{tree.name}</h1>
+            <p className="text-xs md:text-base text-gray-600 mt-1">あなたの家系図を整理します</p>
+          </div>
+          <SignOutButton />
         </div>
       </header>
 
