@@ -347,8 +347,11 @@ function addCrossingGaps(edges: LayoutEdge[]): LayoutEdge[] {
       if (h.edgeIndex === v.edgeIndex) return
       const hx1 = Math.min(h.a.x, h.b.x)
       const hx2 = Math.max(h.a.x, h.b.x)
-      // 端点同士が触れているだけ（実際の接続点）は交差とみなさない
-      const crossesInterior = h.a.y > vy1 && h.a.y < vy2 && v.a.x > hx1 && v.a.x < hx2
+      // 同じ世代間をつなぐ親子線は必ず同じY（midY）を通るため、無関係な線同士の
+      // 交差点でも縦線の端点（startY/midY/endY）とちょうど一致することが多い。
+      // Y側は端点も含めて判定し、X側だけ「横線の端点ちょうどではない」を条件にすることで、
+      // 本当の接続点（縦線の端点がその横線自身の端点と一致する場合）とだけ区別する。
+      const crossesInterior = h.a.y >= vy1 && h.a.y <= vy2 && v.a.x > hx1 && v.a.x < hx2
       if (!crossesInterior) return
       const key = segmentKey(v.edgeIndex, v.a, v.b)
       if (!gapsBySegment.has(key)) gapsBySegment.set(key, [])
