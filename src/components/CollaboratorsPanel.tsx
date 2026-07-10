@@ -8,11 +8,15 @@ interface CollaboratorsPanelProps {
 }
 
 export default function CollaboratorsPanel({ treeId }: CollaboratorsPanelProps) {
-  const { collaborators, myRole, loading, inviting, error, invite, remove } =
+  const { collaborators, myRole, loading, inviting, error, invite, resendInvite, remove } =
     useTreeCollaborators(treeId)
   const [email, setEmail] = useState('')
   const [inviteMessage, setInviteMessage] = useState<
     { type: 'success' | 'error'; text: string } | null
+  >(null)
+  const [resendingEmail, setResendingEmail] = useState<string | null>(null)
+  const [resendMessage, setResendMessage] = useState<
+    { email: string; type: 'success' | 'error'; text: string } | null
   >(null)
 
   const isOwner = myRole === 'owner'
@@ -28,6 +32,18 @@ export default function CollaboratorsPanel({ treeId }: CollaboratorsPanelProps) 
       setInviteMessage({ type: 'success', text: `${email} を招待しました` })
       setEmail('')
     }
+  }
+
+  const handleResend = async (memberEmail: string) => {
+    setResendingEmail(memberEmail)
+    setResendMessage(null)
+    const { error: resendError } = await resendInvite(memberEmail)
+    setResendingEmail(null)
+    setResendMessage(
+      resendError
+        ? { email: memberEmail, type: 'error', text: resendError }
+        : { email: memberEmail, type: 'success', text: '招待メールを再送信しました' }
+    )
   }
 
   const handleRemove = async (userId: string, memberEmail: string) => {
@@ -86,26 +102,55 @@ export default function CollaboratorsPanel({ treeId }: CollaboratorsPanelProps) 
         {error && <p className="text-xs md:text-sm text-red-600 mb-2">⚠ {error}</p>}
         <ul className="divide-y divide-gray-200 bg-white rounded-lg border border-gray-200">
           {collaborators.map((c) => (
-            <li
-              key={c.userId}
-              className="flex items-center justify-between px-3 md:px-4 py-2 md:py-3 gap-2"
-            >
-              <div className="min-w-0">
-                <p className="text-sm md:text-base text-gray-900 truncate">
-                  {c.email}
-                  {c.isMe && <span className="text-gray-400 text-xs ml-1">(自分)</span>}
-                </p>
-                <p className="text-xs text-gray-500">
-                  {c.role === 'owner' ? 'オーナー' : '編集者'}
-                </p>
+            <li key={c.userId} className="px-3 md:px-4 py-2 md:py-3">
+              <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="text-sm md:text-base text-gray-900 truncate">
+                    {c.email}
+                    {c.isMe && <span className="text-gray-400 text-xs ml-1">(自分)</span>}
+                  </p>
+                  <p className="text-xs text-gray-500 flex items-center gap-1.5">
+                    {c.role === 'owner' ? 'オーナー' : '編集者'}
+                    <span
+                      className={`inline-block px-1.5 py-0.5 rounded text-[10px] ${
+                        c.hasLoggedIn
+                          ? 'bg-green-100 text-green-700'
+                          : 'bg-amber-100 text-amber-700'
+                      }`}
+                    >
+                      {c.hasLoggedIn ? '参加済み' : '招待中（未ログイン）'}
+                    </span>
+                  </p>
+                </div>
+                <div className="flex-shrink-0 flex items-center gap-2">
+                  {isOwner && !c.hasLoggedIn && (
+                    <button
+                      onClick={() => handleResend(c.email)}
+                      disabled={resendingEmail === c.email}
+                      className="text-xs md:text-sm text-indigo-600 hover:text-indigo-700 transition whitespace-nowrap disabled:opacity-50"
+                    >
+                      {resendingEmail === c.email ? '送信中...' : '再送信'}
+                    </button>
+                  )}
+                  {isOwner && c.role === 'editor' && (
+                    <button
+                      onClick={() => handleRemove(c.userId, c.email)}
+                      className="text-xs md:text-sm text-red-600 hover:text-red-700 transition whitespace-nowrap"
+                    >
+                      削除
+                    </button>
+                  )}
+                </div>
               </div>
-              {isOwner && c.role === 'editor' && (
-                <button
-                  onClick={() => handleRemove(c.userId, c.email)}
-                  className="text-xs md:text-sm text-red-600 hover:text-red-700 transition whitespace-nowrap"
+              {resendMessage && resendMessage.email === c.email && (
+                <p
+                  className={`text-xs mt-1 ${
+                    resendMessage.type === 'error' ? 'text-red-600' : 'text-green-600'
+                  }`}
                 >
-                  削除
-                </button>
+                  {resendMessage.type === 'error' ? '⚠ ' : '✓ '}
+                  {resendMessage.text}
+                </p>
               )}
             </li>
           ))}

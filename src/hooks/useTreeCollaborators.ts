@@ -11,6 +11,7 @@ export interface Collaborator {
   role: CollaboratorRole
   addedAt: number
   isMe: boolean
+  hasLoggedIn: boolean
 }
 
 type CollaboratorRow = {
@@ -18,6 +19,7 @@ type CollaboratorRow = {
   email: string
   role: CollaboratorRole
   added_at: string
+  last_sign_in_at: string | null
 }
 
 export function useTreeCollaborators(treeId: string | null) {
@@ -55,6 +57,7 @@ export function useTreeCollaborators(treeId: string | null) {
         role: r.role,
         addedAt: new Date(r.added_at).getTime(),
         isMe: r.user_id === user?.id,
+        hasLoggedIn: r.last_sign_in_at !== null,
       }))
     )
     setMyRole(rows.find((r) => r.user_id === user?.id)?.role ?? null)
@@ -83,6 +86,21 @@ export function useTreeCollaborators(treeId: string | null) {
     [treeId, refetch]
   )
 
+  const resendInvite = useCallback(
+    async (email: string) => {
+      if (!treeId) return { error: '家系図が見つかりません' }
+      const res = await fetch('/api/invite/resend', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ treeId, email }),
+      })
+      const body = await res.json().catch(() => ({}))
+      if (!res.ok) return { error: body.error ?? '再送信に失敗しました' }
+      return { error: null }
+    },
+    [treeId]
+  )
+
   const remove = useCallback(
     async (userId: string) => {
       if (!treeId) return { error: '家系図が見つかりません' }
@@ -98,5 +116,5 @@ export function useTreeCollaborators(treeId: string | null) {
     [supabase, treeId, refetch]
   )
 
-  return { collaborators, myRole, loading, inviting, error, invite, remove }
+  return { collaborators, myRole, loading, inviting, error, invite, resendInvite, remove }
 }
