@@ -157,22 +157,83 @@ export function computeFamilyTreeLayout(
     byGen.set(g, ids)
   })
 
-  // --- Step 5: assign coordinates ---
-  const positions = new Map<string, { x: number; y: number }>()
-  const nodes: LayoutNode[] = []
-  let maxCols = 0
-  generations.forEach((g) => {
-    const ids = byGen.get(g)!
-    maxCols = Math.max(maxCols, ids.length)
-    ids.forEach((id, i) => {
-      const x = i * (NODE_WIDTH + H_GAP) + H_GAP
-      const y = g * (NODE_HEIGHT + V_GAP) + V_GAP / 2
-      positions.set(id, { x, y })
-      nodes.push({ member: memberMap.get(id)!, x, y, generation: g })
-    })
+  // 各世代を単純に横幅基準で中央揃えするだけだと、子が少ない/多い枝が混在したときに
+  // 実際の親子の真上・真下からずれてしまい、線が長く伸びて親子が離れて見えてしまう。
+  // そのため、いちばん下の世代（子がいない末端）から上の世代に向かって、
+  // 「親は自分の実の子供たちの中心の真上に置く」方式で座標を決める。
+  const childrenOf = new Map<string, string[]>()
+  relations.forEach((r) => {
+    if (!memberMap.has(r.parentId) || !memberMap.has(r.childId)) return
+    if (!childrenOf.has(r.parentId)) childrenOf.set(r.parentId, [])
+    childrenOf.get(r.parentId)!.push(r.childId)
   })
 
-  const width = maxCols * (NODE_WIDTH + H_GAP) + H_GAP
+  // 世代内で並んでいる順序（byGen）はすでに配偶者が隣り合うようクラスタ化されているため、
+  // 隣接する2人が配偶者ならまとめて1クラスタとして扱う
+  function toClusters(orderedIds: string[]): string[][] {
+    const clusters: string[][] = []
+    const seen = new Set<string>()
+    for (let i = 0; i < orderedIds.length; i++) {
+      const id = orderedIds[i]
+      if (seen.has(id)) continue
+      const next = orderedIds[i + 1]
+      if (next && !seen.has(next) && (spouseOf.get(id) || []).includes(next)) {
+        clusters.push([id, next])
+        seen.add(id)
+        seen.add(next)
+      } else {
+        clusters.push([id])
+        seen.add(id)
+      }
+    }
+    return clusters
+  }
+
+  const clusterWidth = (count: number) => count * NODE_WIDTH + (count - 1) * H_GAP
+
+  // --- Step 5: assign coordinates（末端の世代から上に向かって配置） ---
+  const positions = new Map<string, { x: number; y: number }>()
+  const nodes: LayoutNode[] = []
+
+  for (let idx = generations.length - 1; idx >= 0; idx--) {
+    const g = generations[idx]
+    const clusters = toClusters(byGen.get(g)!)
+    const y = g * (NODE_HEIGHT + V_GAP) + V_GAP / 2
+
+    let cursorX = H_GAP
+    clusters.forEach((cluster) => {
+      const cw = clusterWidth(cluster.length)
+
+      // このクラスタ（本人、または配偶者どちらの子も含む）の実子の中心座標を求める
+      const childCenters: number[] = []
+      cluster.forEach((memberId) => {
+        ;(childrenOf.get(memberId) || []).forEach((childId) => {
+          const childPos = positions.get(childId)
+          if (childPos) childCenters.push(childPos.x + NODE_WIDTH / 2)
+        })
+      })
+      const idealCenterX =
+        childCenters.length > 0
+          ? childCenters.reduce((s, x) => s + x, 0) / childCenters.length
+          : null
+
+      // 兄弟同士が重ならないよう、cursorX より左には置かない
+      const left = Math.max(idealCenterX !== null ? idealCenterX - cw / 2 : cursorX, cursorX)
+
+      cluster.forEach((memberId, i) => {
+        const x = left + i * (NODE_WIDTH + H_GAP)
+        positions.set(memberId, { x, y })
+        nodes.push({ member: memberMap.get(memberId)!, x, y, generation: g })
+      })
+
+      cursorX = left + cw + H_GAP
+    })
+  }
+
+  nodes.sort((a, b) => a.generation - b.generation)
+
+  const width =
+    Math.max(...Array.from(positions.values()).map((p) => p.x + NODE_WIDTH)) + H_GAP
   const height = generations.length * (NODE_HEIGHT + V_GAP) + V_GAP / 2
 
   // --- Step 6: build connector paths ---
