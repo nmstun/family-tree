@@ -299,5 +299,91 @@ export function computeFamilyTreeLayout(
     })
   })
 
-  return { nodes, edges, width, height }
+  return { nodes, edges: addCrossingGaps(edges), width, height }
+}
+
+// 無関係な線同士がただ交差しているだけなのか、実際に繋がっているのかを見分けられるように、
+// 縦方向のセグメントが他の線（別のエッジ）の横方向のセグメントと交差する箇所に
+// 小さな隙間を入れる（横線側は繋げたままにし、縦線が下を通っているように見せる）。
+// 端点同士が触れているだけの本当の接続点は、セグメント内部での交差ではないため対象外。
+const CROSSING_GAP = 6
+
+function addCrossingGaps(edges: LayoutEdge[]): LayoutEdge[] {
+  type Point = { x: number; y: number }
+  type Segment = { edgeIndex: number; a: Point; b: Point }
+
+  function parsePoints(path: string): Point[] {
+    const nums = (path.match(/-?\d+(?:\.\d+)?/g) ?? []).map(Number)
+    const points: Point[] = []
+    for (let i = 0; i + 1 < nums.length; i += 2) points.push({ x: nums[i], y: nums[i + 1] })
+    return points
+  }
+
+  function pointsToSegments(edgeIndex: number, points: Point[]): Segment[] {
+    const segments: Segment[] = []
+    for (let i = 0; i + 1 < points.length; i++) {
+      const a = points[i]
+      const b = points[i + 1]
+      if (a.x === b.x && a.y === b.y) continue
+      segments.push({ edgeIndex, a, b })
+    }
+    return segments
+  }
+
+  const edgePoints = edges.map((e) => parsePoints(e.path))
+  const allSegments = edgePoints.flatMap((points, i) => pointsToSegments(i, points))
+  const verticals = allSegments.filter((s) => s.a.x === s.b.x)
+  const horizontals = allSegments.filter((s) => s.a.y === s.b.y)
+
+  // segmentKey -> このセグメント上で隙間を入れるべき交差点のY座標一覧
+  const gapsBySegment = new Map<string, number[]>()
+  const segmentKey = (edgeIndex: number, a: Point, b: Point) =>
+    `${edgeIndex}:${a.x},${a.y}-${b.x},${b.y}`
+
+  verticals.forEach((v) => {
+    const vy1 = Math.min(v.a.y, v.b.y)
+    const vy2 = Math.max(v.a.y, v.b.y)
+    horizontals.forEach((h) => {
+      if (h.edgeIndex === v.edgeIndex) return
+      const hx1 = Math.min(h.a.x, h.b.x)
+      const hx2 = Math.max(h.a.x, h.b.x)
+      // 端点同士が触れているだけ（実際の接続点）は交差とみなさない
+      const crossesInterior = h.a.y > vy1 && h.a.y < vy2 && v.a.x > hx1 && v.a.x < hx2
+      if (!crossesInterior) return
+      const key = segmentKey(v.edgeIndex, v.a, v.b)
+      if (!gapsBySegment.has(key)) gapsBySegment.set(key, [])
+      gapsBySegment.get(key)!.push(h.a.y)
+    })
+  })
+
+  if (gapsBySegment.size === 0) return edges
+
+  return edges.map((edge, i) => {
+    const points = edgePoints[i]
+    const parts: string[] = []
+    for (let j = 0; j + 1 < points.length; j++) {
+      const a = points[j]
+      const b = points[j + 1]
+      if (a.x === b.x && a.y === b.y) continue
+      const crossings = gapsBySegment.get(segmentKey(i, a, b))
+      if (a.x === b.x && crossings && crossings.length > 0) {
+        const dir = b.y > a.y ? 1 : -1
+        const sorted = crossings.slice().sort((p, q) => (p - q) * dir)
+        let cursorY = a.y
+        sorted.forEach((cy) => {
+          const gapStart = cy - (CROSSING_GAP / 2) * dir
+          if ((gapStart - cursorY) * dir > 0) {
+            parts.push(`M ${a.x} ${cursorY} L ${a.x} ${gapStart}`)
+          }
+          cursorY = cy + (CROSSING_GAP / 2) * dir
+        })
+        if ((b.y - cursorY) * dir > 0) {
+          parts.push(`M ${a.x} ${cursorY} L ${b.x} ${b.y}`)
+        }
+      } else {
+        parts.push(`M ${a.x} ${a.y} L ${b.x} ${b.y}`)
+      }
+    }
+    return { ...edge, path: parts.join(' ') }
+  })
 }
