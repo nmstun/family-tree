@@ -13,7 +13,7 @@ export default function FamilyTreeApp() {
   const {
     tree,
     loading,
-    autoSaveStatus,
+    syncStatus,
     addMember,
     updateMember,
     deleteMember,
@@ -21,7 +21,6 @@ export default function FamilyTreeApp() {
     removeMarriage,
     addParentChild,
     removeParentChild,
-    save,
   } = useFamilyTree()
   const [activeTab, setActiveTab] = useState<'members' | 'relations' | 'view' | 'export'>(
     'members'
@@ -33,13 +32,6 @@ export default function FamilyTreeApp() {
         <div className="text-gray-500">読み込み中...</div>
       </div>
     )
-  }
-
-  const handleSave = async () => {
-    const success = await save()
-    if (success) {
-      alert('保存しました')
-    }
   }
 
   const handleExport = () => {
@@ -176,19 +168,18 @@ export default function FamilyTreeApp() {
           </div>
         )}
 
-        {/* Footer Actions */}
-        <div className="mt-4 md:mt-8 flex items-center gap-3 md:gap-4">
-          <button
-            onClick={handleSave}
-            className="flex-1 md:flex-initial bg-green-600 text-white px-4 md:px-6 py-2 md:py-3 rounded-lg hover:bg-green-700 transition font-medium text-sm md:text-base"
-          >
-            💾 保存
-          </button>
-          {autoSaveStatus === 'saving' && (
-            <span className="text-xs md:text-sm text-gray-500">保存中...</span>
+        {/* Sync status */}
+        <div className="mt-4 md:mt-8 flex items-center gap-2">
+          {syncStatus === 'syncing' && (
+            <span className="text-xs md:text-sm text-gray-500">同期中...</span>
           )}
-          {autoSaveStatus === 'saved' && (
-            <span className="text-xs md:text-sm text-green-600">✓ 自動保存済み</span>
+          {syncStatus === 'synced' && (
+            <span className="text-xs md:text-sm text-green-600">✓ 同期済み</span>
+          )}
+          {syncStatus === 'error' && (
+            <span className="text-xs md:text-sm text-red-600">
+              ⚠ 同期に失敗しました。もう一度お試しください
+            </span>
           )}
         </div>
       </main>
