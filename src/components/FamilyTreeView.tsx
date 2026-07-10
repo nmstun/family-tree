@@ -48,16 +48,18 @@ export default function FamilyTreeView({
   const svgWidth = layout.width + padding * 2
   const svgHeight = layout.height + padding * 2
 
-  // スマホなど画面が狭い場合、初期表示で家系図が画面幅に収まるように
-  // 一度だけ自動でスケールを合わせる（ユーザーが手動でズームした後は上書きしない）
+  // スマホなど画面が狭い場合、初期表示で家系図が極端にはみ出さないように
+  // 一度だけ自動でスケールを合わせる（ユーザーが手動でズームした後は上書きしない）。
+  // 文字が読めなくなるほどは縮小しないよう下限を高めに設定し、
+  // はみ出す分はスクロールで見る前提にする。
   useEffect(() => {
     if (hasAutoFitRef.current || svgWidth === 0) return
     const containerWidth = containerRef.current?.clientWidth
     if (!containerWidth) return
     hasAutoFitRef.current = true
     const fitScale = Math.min(1, (containerWidth - 8) / svgWidth)
-    if (fitScale < 1) {
-      setScale(Math.max(0.4, +fitScale.toFixed(2)))
+    if (fitScale < 0.95) {
+      setScale(Math.max(0.75, +fitScale.toFixed(2)))
     }
   }, [svgWidth])
 
@@ -71,61 +73,63 @@ export default function FamilyTreeView({
 
   return (
     <div>
-      {/* Zoom controls */}
-      <div className="flex items-center gap-2 mb-3">
-        <button
-          onClick={() => setScale((s) => Math.max(0.4, +(s - 0.1).toFixed(2)))}
-          className="min-w-[44px] min-h-[44px] md:min-w-0 md:min-h-0 px-2 md:px-3 py-1 text-base md:text-sm bg-gray-100 hover:bg-gray-200 rounded transition"
-          aria-label="縮小"
-        >
-          −
-        </button>
-        <span className="text-xs md:text-sm text-gray-600 w-12 text-center">
-          {Math.round(scale * 100)}%
-        </span>
-        <button
-          onClick={() => setScale((s) => Math.min(2, +(s + 0.1).toFixed(2)))}
-          className="min-w-[44px] min-h-[44px] md:min-w-0 md:min-h-0 px-2 md:px-3 py-1 text-base md:text-sm bg-gray-100 hover:bg-gray-200 rounded transition"
-          aria-label="拡大"
-        >
-          ＋
-        </button>
-        <button
-          onClick={() => setScale(1)}
-          className="min-h-[44px] md:min-h-0 px-3 md:px-3 py-1 text-sm bg-gray-100 hover:bg-gray-200 rounded transition"
-        >
-          リセット
-        </button>
-      </div>
+      {/* Controls */}
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+        <div className="inline-flex items-center gap-1 bg-white rounded-full shadow-sm border border-gray-200 p-1">
+          <button
+            onClick={() => setScale((s) => Math.max(0.6, +(s - 0.1).toFixed(2)))}
+            className="min-w-[44px] min-h-[44px] md:min-w-[32px] md:min-h-[32px] flex items-center justify-center text-base md:text-sm text-gray-600 hover:bg-gray-100 rounded-full transition"
+            aria-label="縮小"
+          >
+            −
+          </button>
+          <span className="text-xs md:text-sm text-gray-600 w-12 text-center tabular-nums">
+            {Math.round(scale * 100)}%
+          </span>
+          <button
+            onClick={() => setScale((s) => Math.min(2, +(s + 0.1).toFixed(2)))}
+            className="min-w-[44px] min-h-[44px] md:min-w-[32px] md:min-h-[32px] flex items-center justify-center text-base md:text-sm text-gray-600 hover:bg-gray-100 rounded-full transition"
+            aria-label="拡大"
+          >
+            ＋
+          </button>
+          <button
+            onClick={() => setScale(1)}
+            className="min-h-[44px] md:min-h-[32px] px-3 text-sm text-gray-600 hover:bg-gray-100 rounded-full transition"
+          >
+            リセット
+          </button>
+        </div>
 
-      {/* Legend */}
-      <div className="flex flex-wrap gap-3 md:gap-4 mb-3 text-xs md:text-sm text-gray-600">
-        <div className="flex items-center gap-1">
-          <span className="inline-block w-3 h-3 rounded-full" style={{ backgroundColor: GENDER_COLOR.male.border }} />
-          男性
-        </div>
-        <div className="flex items-center gap-1">
-          <span className="inline-block w-3 h-3 rounded-full" style={{ backgroundColor: GENDER_COLOR.female.border }} />
-          女性
-        </div>
-        <div className="flex items-center gap-1">
-          <span className="inline-block w-3 h-3 rounded-full" style={{ backgroundColor: GENDER_COLOR.other.border }} />
-          その他
-        </div>
-        <div className="flex items-center gap-1">
-          <span className="inline-block w-5 border-t-2 border-gray-400" />
-          配偶者
-        </div>
-        <div className="flex items-center gap-1">
-          <span className="inline-block w-5 border-t-2 border-gray-300" />
-          親子
+        {/* Legend */}
+        <div className="flex flex-wrap gap-2 text-xs md:text-sm text-gray-600">
+          <div className="flex items-center gap-1.5 bg-white rounded-full border border-gray-200 px-2.5 py-1">
+            <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ backgroundColor: GENDER_COLOR.male.border }} />
+            男性
+          </div>
+          <div className="flex items-center gap-1.5 bg-white rounded-full border border-gray-200 px-2.5 py-1">
+            <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ backgroundColor: GENDER_COLOR.female.border }} />
+            女性
+          </div>
+          <div className="flex items-center gap-1.5 bg-white rounded-full border border-gray-200 px-2.5 py-1">
+            <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ backgroundColor: GENDER_COLOR.other.border }} />
+            その他
+          </div>
+          <div className="flex items-center gap-1.5 bg-white rounded-full border border-gray-200 px-2.5 py-1">
+            <span className="inline-block w-4 border-t-2 border-gray-400" />
+            配偶者
+          </div>
+          <div className="flex items-center gap-1.5 bg-white rounded-full border border-gray-200 px-2.5 py-1">
+            <span className="inline-block w-4 border-t-2 border-gray-300" />
+            親子
+          </div>
         </div>
       </div>
 
       {/* Scrollable canvas */}
       <div
         ref={containerRef}
-        className="overflow-auto border border-gray-200 rounded-lg bg-gray-50"
+        className="overflow-auto rounded-xl bg-gradient-to-br from-gray-50 to-gray-100"
         style={{ maxHeight: '70vh' }}
       >
         <svg
@@ -134,6 +138,11 @@ export default function FamilyTreeView({
           viewBox={`0 0 ${svgWidth} ${svgHeight}`}
           xmlns="http://www.w3.org/2000/svg"
         >
+          <defs>
+            <filter id="node-shadow" x="-20%" y="-20%" width="140%" height="140%">
+              <feDropShadow dx="0" dy="1.5" stdDeviation="2.5" floodColor="#1f2937" floodOpacity="0.15" />
+            </filter>
+          </defs>
           <g transform={`translate(${padding}, ${padding})`}>
             {/* Edges (drawn first, under the nodes) */}
             {layout.edges.map((edge) => (
@@ -141,8 +150,10 @@ export default function FamilyTreeView({
                 key={edge.id}
                 d={edge.path}
                 fill="none"
-                stroke={edge.type === 'marriage' ? '#9ca3af' : '#d1d5db'}
-                strokeWidth={edge.type === 'marriage' ? 2 : 1.75}
+                stroke={edge.type === 'marriage' ? '#9ca3af' : '#c7cdd6'}
+                strokeWidth={edge.type === 'marriage' ? 2.25 : 2}
+                strokeLinecap="round"
+                strokeLinejoin="round"
               />
             ))}
 
@@ -156,26 +167,30 @@ export default function FamilyTreeView({
               const age = formatAge(node.member)
 
               return (
-                <g key={node.member.id} transform={`translate(${node.x}, ${node.y})`}>
+                <g
+                  key={node.member.id}
+                  transform={`translate(${node.x}, ${node.y})`}
+                  filter="url(#node-shadow)"
+                >
                   <rect
                     width={NODE_WIDTH}
                     height={NODE_HEIGHT}
-                    rx={10}
+                    rx={14}
                     fill={colors.bg}
                     stroke={colors.border}
-                    strokeWidth={2}
+                    strokeWidth={1.5}
                   />
                   {node.member.photo ? (
                     <>
                       <clipPath id={`clip-${node.member.id}`}>
-                        <circle cx={NODE_WIDTH / 2} cy={26} r={18} />
+                        <circle cx={NODE_WIDTH / 2} cy={28} r={20} />
                       </clipPath>
                       <image
                         href={node.member.photo}
-                        x={NODE_WIDTH / 2 - 18}
+                        x={NODE_WIDTH / 2 - 20}
                         y={8}
-                        width={36}
-                        height={36}
+                        width={40}
+                        height={40}
                         clipPath={`url(#clip-${node.member.id})`}
                         preserveAspectRatio="xMidYMid slice"
                       />
@@ -183,8 +198,8 @@ export default function FamilyTreeView({
                   ) : (
                     <circle
                       cx={NODE_WIDTH / 2}
-                      cy={26}
-                      r={18}
+                      cy={28}
+                      r={20}
                       fill="white"
                       stroke={colors.border}
                       strokeWidth={1.5}
@@ -192,21 +207,21 @@ export default function FamilyTreeView({
                   )}
                   <text
                     x={NODE_WIDTH / 2}
-                    y={62}
+                    y={66}
                     textAnchor="middle"
-                    fontSize={13}
-                    fontWeight={600}
+                    fontSize={15}
+                    fontWeight={700}
                     fill="#1f2937"
                   >
                     {node.member.lastName} {node.member.firstName}
                   </text>
                   {years && (
-                    <text x={NODE_WIDTH / 2} y={76} textAnchor="middle" fontSize={11} fill="#6b7280">
+                    <text x={NODE_WIDTH / 2} y={81} textAnchor="middle" fontSize={12} fill="#6b7280">
                       {years}
                     </text>
                   )}
                   {age && (
-                    <text x={NODE_WIDTH / 2} y={90} textAnchor="middle" fontSize={11} fill="#6b7280">
+                    <text x={NODE_WIDTH / 2} y={96} textAnchor="middle" fontSize={12} fill="#6b7280">
                       {age}
                     </text>
                   )}

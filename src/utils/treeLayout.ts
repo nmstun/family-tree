@@ -306,7 +306,7 @@ export function computeFamilyTreeLayout(
 // 縦方向のセグメントが他の線（別のエッジ）の横方向のセグメントと交差する箇所に
 // 小さな隙間を入れる（横線側は繋げたままにし、縦線が下を通っているように見せる）。
 // 端点同士が触れているだけの本当の接続点は、セグメント内部での交差ではないため対象外。
-const CROSSING_GAP = 6
+const CROSSING_GAP = 10
 
 function addCrossingGaps(edges: LayoutEdge[]): LayoutEdge[] {
   type Point = { x: number; y: number }
