@@ -6,7 +6,7 @@
 
 - 🔐 **メールマジックリンク認証** - Supabase Authによるパスワードレスログイン
 - 👨‍👩‍👧 **複数人でのリアルタイム共同編集** - 家系図をユーザー間で共有し、変更を即座に同期
-- 🤝 **共同編集者の招待** - オーナーがメールアドレス指定で編集権限を付与
+- 🤝 **共同編集者の招待** - オーナーがメールアドレス指定で編集権限を付与。未登録のメールアドレスでも招待可能（管理者APIでアカウントを作成し、日本語の招待メールを送信）
 - 📸 **写真付きメンバー管理** - 各人物の写真を登録・編集可能。名前検索付きの一覧で数十人規模でも探しやすい
 - 🎂 **年齢の自動計算・表示** - 生年月日/没年月日から現在の年齢・享年を算出
 - 📋 **家系図の構築** - 親子関係・配偶者関係（結婚日の編集含む）を管理
@@ -35,7 +35,7 @@ supabase start
 supabase db reset
 ```
 
-`supabase start` の出力に表示される `API URL` と `anon key`（`publishable key`）を `.env.local` に設定してください（`.env.local.example` を参照）。
+`supabase start` の出力に表示される `API URL` / `anon key`（`publishable key`）/ `service_role key`（`secret key`）を `.env.local` に設定してください（`.env.local.example` を参照）。`SUPABASE_SERVICE_ROLE_KEY` は未登録メールアドレスへの招待（管理者API）に使用するサーバー専用の秘密情報のため、`NEXT_PUBLIC_` を付けないこと。
 
 ### 2. アプリの起動
 
@@ -76,13 +76,16 @@ npm run lint
 
 - **Authentication → URL Configuration** の `Site URL` / `Redirect URLs` に本番ドメインを登録（未設定だとメールのログインリンクが機能しません）
 - 本番運用する場合は **Project Settings → Authentication → SMTP Settings** で独自SMTPを設定（Supabase組み込みメーラーは検証用途でレート制限が厳しいため）
+- Vercel側の環境変数に **`SUPABASE_SERVICE_ROLE_KEY`**（Production環境向け）を追加してください。未登録メールアドレスへの招待（管理者API経由でのユーザー作成）に必要です。`NEXT_PUBLIC_` を付けず、サーバー専用の秘密情報として登録すること
 
 ## プロジェクト構成
 
 ```
 family-tree-app/
 ├── app/                          # Next.js App Router
-│   ├── auth/callback/route.ts    # マジックリンクのコールバック（PKCEコード交換）
+│   ├── api/invite/route.ts       # 未登録メールアドレスへの招待（管理者API使用）
+│   ├── auth/callback/route.ts    # マジックリンクのコールバック（PKCEコード交換、同一ブラウザ専用）
+│   ├── auth/confirm/route.ts     # 招待メールなどのコールバック（token_hash方式、他端末でも可）
 │   ├── login/page.tsx            # ログイン画面
 │   ├── layout.tsx
 │   └── page.tsx
@@ -99,7 +102,7 @@ family-tree-app/
 │   ├── hooks/
 │   │   ├── useFamilyTree.ts      # 家系図データのCRUD・Realtime購読
 │   │   └── useTreeCollaborators.ts # 共同編集者の一覧取得・招待・削除
-│   ├── lib/supabase/             # Supabaseクライアント（ブラウザ/サーバー）
+│   ├── lib/supabase/             # Supabaseクライアント（ブラウザ/サーバー/管理者用）
 │   ├── utils/
 │   │   ├── age.ts                # 年齢・享年の計算
 │   │   ├── familyTreeValidation.ts # 親子関係の循環チェック
@@ -107,7 +110,8 @@ family-tree-app/
 │   │   └── jsonExport.ts
 │   └── types/index.ts
 ├── supabase/
-│   └── migrations/               # DBスキーマ・RLSポリシー・RPC関数
+│   ├── migrations/                # DBスキーマ・RLSポリシー・RPC関数
+│   └── templates/invite.html      # 招待メールのテンプレート（日本語）
 ├── public/
 ├── package.json
 ├── tsconfig.json

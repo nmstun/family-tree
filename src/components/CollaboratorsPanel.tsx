@@ -47,7 +47,7 @@ export default function CollaboratorsPanel({ treeId }: CollaboratorsPanelProps) 
             共同編集者を招待
           </h3>
           <p className="text-xs md:text-sm text-gray-600 mb-3">
-            招待する相手は、あらかじめこのアプリに一度ログインしている必要があります（メールアドレスでアカウントが作成されます）。
+            まだこのアプリを使ったことがない相手でも招待できます。招待メールが届き、そこからログインするとすぐに編集を始められます。
           </p>
           <form onSubmit={handleInvite} className="flex flex-col sm:flex-row gap-2">
             <input

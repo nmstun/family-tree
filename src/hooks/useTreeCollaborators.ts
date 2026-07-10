@@ -69,16 +69,18 @@ export function useTreeCollaborators(treeId: string | null) {
     async (email: string) => {
       if (!treeId) return { error: '家系図が見つかりません' }
       setInviting(true)
-      const { error: rpcError } = await supabase.rpc('invite_collaborator', {
-        p_tree_id: treeId,
-        p_email: email.trim(),
+      const res = await fetch('/api/invite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ treeId, email: email.trim() }),
       })
+      const body = await res.json().catch(() => ({}))
       setInviting(false)
-      if (rpcError) return { error: rpcError.message }
+      if (!res.ok) return { error: body.error ?? '招待に失敗しました' }
       await refetch()
       return { error: null }
     },
-    [supabase, treeId, refetch]
+    [treeId, refetch]
   )
 
   const remove = useCallback(
