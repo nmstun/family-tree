@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react'
 import { FamilyMember, Marriage, ParentChildRelation } from '@/types'
 import { wouldCreateCycle } from '@/utils/familyTreeValidation'
+import { sortMembersByName } from '@/utils/sortMembers'
 
 interface RelationshipManagerProps {
   members: FamilyMember[]
@@ -42,13 +43,7 @@ export default function RelationshipManager({
   const [parentId, setParentId] = useState('')
   const [childId, setChildId] = useState('')
 
-  const sortedMembers = useMemo(
-    () =>
-      members
-        .slice()
-        .sort((a, b) => `${a.lastName}${a.firstName}`.localeCompare(`${b.lastName}${b.firstName}`, 'ja')),
-    [members]
-  )
+  const sortedMembers = useMemo(() => sortMembersByName(members), [members])
 
   const handleAddMarriage = () => {
     if (!spouse1 || !spouse2) {

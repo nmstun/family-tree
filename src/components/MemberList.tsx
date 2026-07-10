@@ -1,8 +1,9 @@
 'use client'
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { FamilyMember } from '@/types'
 import { calculateAge } from '@/utils/age'
+import { sortMembersByName } from '@/utils/sortMembers'
 import MemberForm from './MemberForm'
 
 interface MemberListProps {
@@ -11,12 +12,16 @@ interface MemberListProps {
   onDelete: (id: string) => void
 }
 
-export default function MemberList({
-  members,
-  onUpdate,
-  onDelete,
-}: MemberListProps) {
+export default function MemberList({ members, onUpdate, onDelete }: MemberListProps) {
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [query, setQuery] = useState('')
+
+  const sortedMembers = useMemo(() => sortMembersByName(members), [members])
+  const filteredMembers = useMemo(() => {
+    const q = query.trim()
+    if (!q) return sortedMembers
+    return sortedMembers.filter((m) => `${m.lastName}${m.firstName}`.includes(q))
+  }, [sortedMembers, query])
 
   if (members.length === 0) {
     return (
@@ -27,81 +32,98 @@ export default function MemberList({
   }
 
   return (
-    <div className="space-y-2 md:space-y-3">
-      {members.map((member) =>
-        editingId === member.id ? (
-          <MemberForm
-            key={member.id}
-            initialMember={member}
-            onSubmit={(updates) => {
-              onUpdate(member.id, updates)
-              setEditingId(null)
-            }}
-            onCancel={() => setEditingId(null)}
-          />
-        ) : (
-        <div
-          key={member.id}
-          className="bg-white rounded-lg shadow p-3 md:p-4 flex flex-col sm:flex-row gap-3 md:gap-4 items-start hover:shadow-md transition"
-        >
-          {/* Photo */}
-          <div className="flex-shrink-0">
-            {member.photo ? (
-              <img
-                src={member.photo}
-                alt={`${member.lastName}${member.firstName}`}
-                className="h-16 w-16 md:h-24 md:w-24 object-cover rounded-lg"
-              />
-            ) : (
-              <div className="h-16 w-16 md:h-24 md:w-24 bg-gray-200 rounded-lg flex items-center justify-center">
-                <span className="text-2xl md:text-3xl">
-                  {member.gender === 'female' ? '👩' : '👨'}
-                </span>
-              </div>
-            )}
-          </div>
+    <div>
+      <input
+        type="text"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder="名前で検索..."
+        className="w-full mb-2 md:mb-3 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none text-sm"
+      />
 
-          {/* Info */}
-          <div className="flex-1 min-w-0">
-            <h3 className="text-base md:text-lg font-semibold text-gray-900">
-              {member.lastName} {member.firstName}
-            </h3>
-            <p className="text-xs md:text-sm text-gray-600">
-              {member.gender === 'male' && '男性'}
-              {member.gender === 'female' && '女性'}
-              {member.gender === 'other' && 'その他'}
-            </p>
-            {member.birthDate && (
-              <p className="text-xs md:text-sm text-gray-600">
-                {member.deathDate
-                  ? `享年${calculateAge(member.birthDate, member.deathDate)}`
-                  : `${calculateAge(member.birthDate)}歳`}
-              </p>
-            )}
-            {member.notes && (
-              <p className="text-xs md:text-sm text-gray-500 mt-1 md:mt-2 italic line-clamp-2">
-                {member.notes}
-              </p>
-            )}
-          </div>
-
-          {/* Actions */}
-          <div className="flex gap-2 w-full sm:w-auto">
-            <button
-              onClick={() => setEditingId(member.id)}
-              className="flex-1 sm:flex-initial px-3 py-1 text-xs md:text-sm bg-indigo-100 text-indigo-700 rounded hover:bg-indigo-200 transition"
-            >
-              編集
-            </button>
-            <button
-              onClick={() => onDelete(member.id)}
-              className="flex-1 sm:flex-initial px-3 py-1 text-xs md:text-sm bg-red-100 text-red-700 rounded hover:bg-red-200 transition"
-            >
-              削除
-            </button>
-          </div>
+      {filteredMembers.length === 0 ? (
+        <div className="bg-white rounded-lg shadow p-4 md:p-6 text-center text-gray-500 text-sm md:text-base">
+          該当するメンバーが見つかりません
         </div>
-        )
+      ) : (
+        <div className="bg-white rounded-lg shadow divide-y divide-gray-100">
+          {filteredMembers.map((member) =>
+            editingId === member.id ? (
+              <div key={member.id} className="p-3 md:p-4">
+                <MemberForm
+                  initialMember={member}
+                  onSubmit={(updates) => {
+                    onUpdate(member.id, updates)
+                    setEditingId(null)
+                  }}
+                  onCancel={() => setEditingId(null)}
+                />
+              </div>
+            ) : (
+              <div
+                key={member.id}
+                className="flex items-center gap-3 px-3 md:px-4 py-2 md:py-2.5 hover:bg-gray-50 transition"
+              >
+                {/* Avatar */}
+                <div className="flex-shrink-0">
+                  {member.photo ? (
+                    <img
+                      src={member.photo}
+                      alt={`${member.lastName}${member.firstName}`}
+                      className="h-9 w-9 md:h-10 md:w-10 object-cover rounded-full"
+                    />
+                  ) : (
+                    <div className="h-9 w-9 md:h-10 md:w-10 bg-gray-200 rounded-full flex items-center justify-center">
+                      <span className="text-base md:text-lg">
+                        {member.gender === 'female' ? '👩' : '👨'}
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Info */}
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm md:text-base font-medium text-gray-900 truncate">
+                    {member.lastName} {member.firstName}
+                  </p>
+                  <p className="text-xs text-gray-500 truncate">
+                    {member.gender === 'male' && '男性'}
+                    {member.gender === 'female' && '女性'}
+                    {member.gender === 'other' && 'その他'}
+                    {member.birthDate &&
+                      ` ・ ${
+                        member.deathDate
+                          ? `享年${calculateAge(member.birthDate, member.deathDate)}（${new Date(
+                              member.birthDate
+                            ).toLocaleDateString('ja-JP')} - ${new Date(
+                              member.deathDate
+                            ).toLocaleDateString('ja-JP')}）`
+                          : `${calculateAge(member.birthDate)}歳（${new Date(
+                              member.birthDate
+                            ).toLocaleDateString('ja-JP')}）`
+                      }`}
+                  </p>
+                </div>
+
+                {/* Actions */}
+                <div className="flex-shrink-0 flex gap-1.5 md:gap-2">
+                  <button
+                    onClick={() => setEditingId(member.id)}
+                    className="px-2 md:px-3 py-1 text-xs md:text-sm bg-indigo-100 text-indigo-700 rounded hover:bg-indigo-200 transition"
+                  >
+                    編集
+                  </button>
+                  <button
+                    onClick={() => onDelete(member.id)}
+                    className="px-2 md:px-3 py-1 text-xs md:text-sm bg-red-100 text-red-700 rounded hover:bg-red-200 transition"
+                  >
+                    削除
+                  </button>
+                </div>
+              </div>
+            )
+          )}
+        </div>
       )}
     </div>
   )
