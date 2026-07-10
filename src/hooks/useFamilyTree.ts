@@ -257,6 +257,16 @@ export function useFamilyTree() {
     [supabase, withSyncStatus]
   )
 
+  // 婚姻日を更新
+  const updateMarriage = useCallback(
+    async (id: string, marriageDate: string) => {
+      await withSyncStatus(
+        supabase.from('marriages').update({ marriage_date: marriageDate || null }).eq('id', id)
+      )
+    },
+    [supabase, withSyncStatus]
+  )
+
   // 婚姻関係を削除
   const removeMarriage = useCallback(
     async (id: string) => {
@@ -340,6 +350,7 @@ export function useFamilyTree() {
     updateMember,
     deleteMember,
     addMarriage,
+    updateMarriage,
     removeMarriage,
     addParentChild,
     removeParentChild,

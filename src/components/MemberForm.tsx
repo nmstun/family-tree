@@ -4,19 +4,22 @@ import { useRef, useState } from 'react'
 import { FamilyMember, Gender } from '@/types'
 
 interface MemberFormProps {
+  initialMember?: FamilyMember
   onSubmit: (member: Omit<FamilyMember, 'id' | 'createdAt'>) => void
+  onCancel?: () => void
 }
 
-export default function MemberForm({ onSubmit }: MemberFormProps) {
+export default function MemberForm({ initialMember, onSubmit, onCancel }: MemberFormProps) {
+  const isEditing = !!initialMember
   const [formData, setFormData] = useState({
-    lastName: '',
-    firstName: '',
-    gender: 'male' as Gender,
-    birthDate: '',
-    deathDate: '',
-    notes: '',
+    lastName: initialMember?.lastName ?? '',
+    firstName: initialMember?.firstName ?? '',
+    gender: (initialMember?.gender ?? 'male') as Gender,
+    birthDate: initialMember?.birthDate ?? '',
+    deathDate: initialMember?.deathDate ?? '',
+    notes: initialMember?.notes ?? '',
   })
-  const [photoPreview, setPhotoPreview] = useState<string | null>(null)
+  const [photoPreview, setPhotoPreview] = useState<string | null>(initialMember?.photo ?? null)
   const lastNameInputRef = useRef<HTMLInputElement>(null)
 
   const handleInputChange = (
@@ -52,11 +55,15 @@ export default function MemberForm({ onSubmit }: MemberFormProps) {
       lastName: formData.lastName,
       firstName: formData.firstName,
       gender: formData.gender,
-      birthDate: formData.birthDate || undefined,
-      deathDate: formData.deathDate || undefined,
+      // 空文字を undefined に変換すると updateMember 側の「undefined なら更新しない」
+      // 判定に引っかかり、編集時に値をクリアできなくなるため、そのまま渡す
+      birthDate: formData.birthDate,
+      deathDate: formData.deathDate,
       photo: photoPreview || undefined,
-      notes: formData.notes || undefined,
+      notes: formData.notes,
     })
+
+    if (isEditing) return
 
     // Reset form
     setFormData({
@@ -190,12 +197,23 @@ export default function MemberForm({ onSubmit }: MemberFormProps) {
       </div>
 
       {/* Submit Button */}
-      <button
-        type="submit"
-        className="w-full bg-indigo-600 text-white py-2 md:py-3 rounded-lg hover:bg-indigo-700 transition font-medium text-sm md:text-base"
-      >
-        追加
-      </button>
+      <div className="flex gap-2">
+        <button
+          type="submit"
+          className="flex-1 bg-indigo-600 text-white py-2 md:py-3 rounded-lg hover:bg-indigo-700 transition font-medium text-sm md:text-base"
+        >
+          {isEditing ? '更新' : '追加'}
+        </button>
+        {isEditing && onCancel && (
+          <button
+            type="button"
+            onClick={onCancel}
+            className="px-4 md:px-6 py-2 md:py-3 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 transition font-medium text-sm md:text-base"
+          >
+            キャンセル
+          </button>
+        )}
+      </div>
     </form>
   )
 }

@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react'
 import { FamilyMember, Marriage, ParentChildRelation } from '@/types'
 import { computeFamilyTreeLayout, NODE_WIDTH, NODE_HEIGHT } from '@/utils/treeLayout'
+import { calculateAge } from '@/utils/age'
 
 interface FamilyTreeViewProps {
   members: FamilyMember[]
@@ -20,6 +21,13 @@ function formatYear(dateStr?: string) {
   if (!dateStr) return ''
   const year = new Date(dateStr).getFullYear()
   return Number.isNaN(year) ? '' : `${year}`
+}
+
+function formatAge(member: FamilyMember) {
+  if (!member.birthDate) return ''
+  const age = calculateAge(member.birthDate, member.deathDate)
+  if (age === null) return ''
+  return member.deathDate ? `享年${age}` : `${age}歳`
 }
 
 export default function FamilyTreeView({
@@ -126,6 +134,7 @@ export default function FamilyTreeView({
               const deathYear = formatYear(node.member.deathDate)
               const years =
                 birthYear || deathYear ? `${birthYear || '?'} - ${deathYear || ''}` : ''
+              const age = formatAge(node.member)
 
               return (
                 <g key={node.member.id} transform={`translate(${node.x}, ${node.y})`}>
@@ -173,8 +182,13 @@ export default function FamilyTreeView({
                     {node.member.lastName} {node.member.firstName}
                   </text>
                   {years && (
-                    <text x={NODE_WIDTH / 2} y={78} textAnchor="middle" fontSize={11} fill="#6b7280">
+                    <text x={NODE_WIDTH / 2} y={76} textAnchor="middle" fontSize={11} fill="#6b7280">
                       {years}
+                    </text>
+                  )}
+                  {age && (
+                    <text x={NODE_WIDTH / 2} y={90} textAnchor="middle" fontSize={11} fill="#6b7280">
+                      {age}
                     </text>
                   )}
                 </g>

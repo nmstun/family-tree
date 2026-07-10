@@ -1,7 +1,7 @@
 import { FamilyMember, Marriage, ParentChildRelation } from '@/types'
 
 export const NODE_WIDTH = 140
-export const NODE_HEIGHT = 96
+export const NODE_HEIGHT = 112
 export const H_GAP = 36
 export const V_GAP = 90
 

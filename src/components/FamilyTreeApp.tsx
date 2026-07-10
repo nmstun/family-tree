@@ -19,6 +19,7 @@ export default function FamilyTreeApp() {
     updateMember,
     deleteMember,
     addMarriage,
+    updateMarriage,
     removeMarriage,
     addParentChild,
     removeParentChild,
@@ -142,6 +143,7 @@ export default function FamilyTreeApp() {
               marriages={tree.marriages}
               parentChildRelations={tree.parentChildRelations}
               onAddMarriage={addMarriage}
+              onUpdateMarriage={updateMarriage}
               onRemoveMarriage={removeMarriage}
               onAddParentChild={addParentChild}
               onRemoveParentChild={removeParentChild}

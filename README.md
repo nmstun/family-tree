@@ -1,24 +1,43 @@
 # Family Tree App
 
-家系図を写真付きで整理できるWebアプリケーションです。
+家系図を写真付きで整理できる、複数人でリアルタイム編集できるWebアプリケーションです。
 
 ## 特徴
 
-- ✨ **ブラウザベースの軽量設計** - DBやサーバー不要
-- 📸 **写真付きメンバー管理** - 各人物の写真を登録可能
-- 📋 **家系図の構築** - 親子関係、配偶者関係を管理
-- 💾 **ローカル保存** - IndexedDB を使用したブラウザ内保存
+- 🔐 **メールマジックリンク認証** - Supabase Authによるパスワードレスログイン
+- 👨‍👩‍👧 **複数人でのリアルタイム共同編集** - 家系図をユーザー間で共有し、変更を即座に同期
+- 🤝 **共同編集者の招待** - オーナーがメールアドレス指定で編集権限を付与
+- 📸 **写真付きメンバー管理** - 各人物の写真を登録・編集可能
+- 🎂 **年齢の自動計算・表示** - 生年月日/没年月日から現在の年齢・享年を算出
+- 📋 **家系図の構築** - 親子関係・配偶者関係（結婚日の編集含む）を管理
+- 🌳 **家系図の可視化** - SVGによる家系図の描画・拡大縮小
 - 📥 **JSON エクスポート** - 家系図データを JSON 形式でダウンロード可能
 
 ## 技術スタック
 
-- **フロントエンド**: Next.js 14+ (App Router) + React 18+
+- **フロントエンド**: Next.js 14 (App Router) + React 18
 - **言語**: TypeScript
 - **スタイリング**: Tailwind CSS
-- **ストレージ**: IndexedDB（ブラウザネイティブ）
-- **ビルドツール**: Vite (Next.js built-in)
+- **バックエンド**: Supabase（Auth / Postgres / Realtime）
+- **ホスティング**: Vercel
 
 ## セットアップ
+
+### 1. Supabase プロジェクトの準備
+
+ローカル開発には [Supabase CLI](https://supabase.com/docs/guides/cli) を使用します。
+
+```bash
+# ローカルの Supabase を起動（Docker が必要）
+supabase start
+
+# マイグレーションを適用（初回・スキーマ変更時）
+supabase db reset
+```
+
+`supabase start` の出力に表示される `API URL` と `anon key`（`publishable key`）を `.env.local` に設定してください（`.env.local.example` を参照）。
+
+### 2. アプリの起動
 
 ```bash
 # 依存パッケージをインストール
@@ -29,6 +48,8 @@ npm run dev
 
 # ブラウザで http://localhost:3000 を開く
 ```
+
+ログインはメールマジックリンク方式です。ローカル開発では実際にメールは送信されず、Supabase付属のメールキャッチャー **Mailpit**（`http://127.0.0.1:54324`）で受信内容を確認できます。
 
 ## 開発
 
@@ -46,61 +67,76 @@ npm start
 npm run lint
 ```
 
+## デプロイ
+
+- **Vercel**: GitHubリポジトリ連携によりmainブランチへのpushで自動デプロイ
+- **Supabase**: `supabase/migrations/` 配下のマイグレーションを本番プロジェクトに適用する必要があります（`supabase db push`、またはSupabaseダッシュボードのGitHub連携）
+
+本番のSupabaseプロジェクトでは、以下の設定も必要です。
+
+- **Authentication → URL Configuration** の `Site URL` / `Redirect URLs` に本番ドメインを登録（未設定だとメールのログインリンクが機能しません）
+- 本番運用する場合は **Project Settings → Authentication → SMTP Settings** で独自SMTPを設定（Supabase組み込みメーラーは検証用途でレート制限が厳しいため）
+
 ## プロジェクト構成
 
 ```
 family-tree-app/
-├── app/                    # Next.js App Router
+├── app/                          # Next.js App Router
+│   ├── auth/callback/route.ts    # マジックリンクのコールバック（PKCEコード交換）
+│   ├── login/page.tsx            # ログイン画面
 │   ├── layout.tsx
-│   ├── page.tsx
-│   └── globals.css
+│   └── page.tsx
+├── middleware.ts                 # 未ログインユーザーのリダイレクト・セッション更新
 ├── src/
-│   ├── components/         # React コンポーネント
-│   │   ├── FamilyTreeApp.tsx
-│   │   ├── MemberForm.tsx
-│   │   └── MemberList.tsx
-│   ├── hooks/              # カスタムフック
-│   │   ├── useIndexedDB.ts
-│   │   └── useFamilyTree.ts
-│   ├── utils/              # ユーティリティ関数
+│   ├── components/
+│   │   ├── FamilyTreeApp.tsx     # アプリ全体のレイアウト・タブ切り替え
+│   │   ├── MemberForm.tsx        # メンバーの追加・編集フォーム
+│   │   ├── MemberList.tsx        # メンバー一覧・編集・削除
+│   │   ├── RelationshipManager.tsx # 配偶者・親子関係の追加・編集・削除
+│   │   ├── FamilyTreeView.tsx    # 家系図のSVG可視化
+│   │   ├── CollaboratorsPanel.tsx # 共同編集者の招待・一覧・削除
+│   │   └── SignOutButton.tsx
+│   ├── hooks/
+│   │   ├── useFamilyTree.ts      # 家系図データのCRUD・Realtime購読
+│   │   └── useTreeCollaborators.ts # 共同編集者の一覧取得・招待・削除
+│   ├── lib/supabase/             # Supabaseクライアント（ブラウザ/サーバー）
+│   ├── utils/
+│   │   ├── age.ts                # 年齢・享年の計算
+│   │   ├── familyTreeValidation.ts # 親子関係の循環チェック
+│   │   ├── treeLayout.ts         # 家系図の座標レイアウト計算
 │   │   └── jsonExport.ts
-│   └── types/              # TypeScript 型定義
-│       └── index.ts
-├── public/                 # 静的資産
+│   └── types/index.ts
+├── supabase/
+│   └── migrations/               # DBスキーマ・RLSポリシー・RPC関数
+├── public/
 ├── package.json
 ├── tsconfig.json
 ├── next.config.js
-├── tailwind.config.js
-└── postcss.config.js
+└── tailwind.config.js
 ```
 
-## 主な機能
+## データモデル
 
-### Phase 1（完了予定）
-- ✅ メンバーの追加・編集・削除
-- ✅ 写真のアップロード
-- ✅ ローカルストレージ（IndexedDB）
-- ✅ JSON エクスポート
+Supabase（Postgres）上に以下のテーブルがあります。Row Level Security（RLS）により、各家系図（`family_trees`）にアクセスできるのは `family_tree_members` に登録されたユーザーのみです。
 
-### Phase 2（開発予定）
-- 親子関係、配偶者関係の定義
-- 家系図の可視化（SVG/Canvas）
-
-### Phase 3（今後）
-- JSON インポート
-- 家系図の印刷機能
-- 複数の家系図管理
+- `family_trees` - 家系図本体
+- `family_tree_members` - 家系図ごとの編集権限（`owner` / `editor`）
+- `family_members` - 人物
+- `marriages` - 配偶者関係
+- `parent_child_relations` - 親子関係
 
 ## 使い方
 
-1. **メンバーを追加**：「メンバー」タブで名前、生年月日、写真を入力して追加
-2. **家系図を構築**：メンバー間の関係性を定義
-3. **保存**：「💾 保存」ボタンでブラウザに保存
-4. **エクスポート**：「📥 エクスポート」タブで JSON をダウンロード
+1. **ログイン**：メールアドレスを入力し、届いたリンクをクリック（初回ログイン時に家系図が自動作成されます）
+2. **メンバーを追加・編集**：「メンバー」タブで名前、生年月日、写真などを入力。カードの「編集」ボタンから既存メンバーの情報を変更可能
+3. **家系図を構築**：「関係」タブで配偶者関係・親子関係を設定。配偶者関係は結婚日を後から編集可能
+4. **共有**：「共有」タブでメールアドレスを指定して共同編集者を招待（オーナーのみ）
+5. **家系図を確認**：「家系図表示」タブでSVGとして可視化
+6. **エクスポート**：「エクスポート」タブで JSON をダウンロード
 
 ## データ形式
 
-エクスポートされる JSON は以下の構造を持ちます：
+エクスポートされる JSON は以下の構造を持ちます。
 
 ```json
 {
@@ -118,20 +154,13 @@ family-tree-app/
 }
 ```
 
-## ブラウザ対応
-
-- Chrome/Edge: 対応
-- Firefox: 対応
-- Safari: 対応（IndexedDB サポート必須）
-
 ## ライセンス
 
 MIT
 
 ## 今後の改善予定
 
-- [ ] 複数の家系図を同時管理
-- [ ] 家系図を SVG で可視化
-- [ ] ドラッグ&ドロップで関係性を定義
-- [ ] 画像の自動圧縮
-- [ ] 暗号化による保護
+- [ ] 写真の削除（現状、一度設定した写真は編集画面から削除できません）
+- [ ] JSON インポート
+- [ ] 家系図の印刷機能
+- [ ] 複数の家系図の切り替え・管理

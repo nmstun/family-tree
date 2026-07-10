@@ -1,6 +1,9 @@
 'use client'
 
+import { useState } from 'react'
 import { FamilyMember } from '@/types'
+import { calculateAge } from '@/utils/age'
+import MemberForm from './MemberForm'
 
 interface MemberListProps {
   members: FamilyMember[]
@@ -10,8 +13,11 @@ interface MemberListProps {
 
 export default function MemberList({
   members,
+  onUpdate,
   onDelete,
 }: MemberListProps) {
+  const [editingId, setEditingId] = useState<string | null>(null)
+
   if (members.length === 0) {
     return (
       <div className="bg-white rounded-lg shadow p-4 md:p-6 text-center text-gray-500 text-sm md:text-base">
@@ -22,7 +28,18 @@ export default function MemberList({
 
   return (
     <div className="space-y-2 md:space-y-3">
-      {members.map((member) => (
+      {members.map((member) =>
+        editingId === member.id ? (
+          <MemberForm
+            key={member.id}
+            initialMember={member}
+            onSubmit={(updates) => {
+              onUpdate(member.id, updates)
+              setEditingId(null)
+            }}
+            onCancel={() => setEditingId(null)}
+          />
+        ) : (
         <div
           key={member.id}
           className="bg-white rounded-lg shadow p-3 md:p-4 flex flex-col sm:flex-row gap-3 md:gap-4 items-start hover:shadow-md transition"
@@ -56,12 +73,9 @@ export default function MemberList({
             </p>
             {member.birthDate && (
               <p className="text-xs md:text-sm text-gray-600">
-                生: {new Date(member.birthDate).toLocaleDateString('ja-JP')}
-              </p>
-            )}
-            {member.deathDate && (
-              <p className="text-xs md:text-sm text-gray-600">
-                没: {new Date(member.deathDate).toLocaleDateString('ja-JP')}
+                {member.deathDate
+                  ? `享年${calculateAge(member.birthDate, member.deathDate)}`
+                  : `${calculateAge(member.birthDate)}歳`}
               </p>
             )}
             {member.notes && (
@@ -74,6 +88,12 @@ export default function MemberList({
           {/* Actions */}
           <div className="flex gap-2 w-full sm:w-auto">
             <button
+              onClick={() => setEditingId(member.id)}
+              className="flex-1 sm:flex-initial px-3 py-1 text-xs md:text-sm bg-indigo-100 text-indigo-700 rounded hover:bg-indigo-200 transition"
+            >
+              編集
+            </button>
+            <button
               onClick={() => onDelete(member.id)}
               className="flex-1 sm:flex-initial px-3 py-1 text-xs md:text-sm bg-red-100 text-red-700 rounded hover:bg-red-200 transition"
             >
@@ -81,7 +101,8 @@ export default function MemberList({
             </button>
           </div>
         </div>
-      ))}
+        )
+      )}
     </div>
   )
 }

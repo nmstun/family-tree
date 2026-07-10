@@ -9,6 +9,7 @@ interface RelationshipManagerProps {
   marriages: Marriage[]
   parentChildRelations: ParentChildRelation[]
   onAddMarriage: (spouse1Id: string, spouse2Id: string, marriageDate?: string) => void
+  onUpdateMarriage: (id: string, marriageDate: string) => void
   onRemoveMarriage: (id: string) => void
   onAddParentChild: (parentId: string, childId: string) => void
   onRemoveParentChild: (parentId: string, childId: string) => void
@@ -24,6 +25,7 @@ export default function RelationshipManager({
   marriages,
   parentChildRelations,
   onAddMarriage,
+  onUpdateMarriage,
   onRemoveMarriage,
   onAddParentChild,
   onRemoveParentChild,
@@ -33,6 +35,9 @@ export default function RelationshipManager({
   const [spouse1, setSpouse1] = useState('')
   const [spouse2, setSpouse2] = useState('')
   const [marriageDate, setMarriageDate] = useState('')
+
+  const [editingMarriageId, setEditingMarriageId] = useState<string | null>(null)
+  const [editMarriageDate, setEditMarriageDate] = useState('')
 
   const [parentId, setParentId] = useState('')
   const [childId, setChildId] = useState('')
@@ -171,24 +176,66 @@ export default function RelationshipManager({
           {marriages.map((m) => (
             <div
               key={m.id}
-              className="bg-white rounded-lg shadow p-3 flex items-center justify-between gap-2"
+              className="bg-white rounded-lg shadow p-3 flex items-center justify-between gap-2 flex-wrap"
             >
-              <div className="text-sm text-gray-800 min-w-0">
+              <div className="text-sm text-gray-800 min-w-0 flex items-center gap-2 flex-wrap">
                 <span className="font-medium">{displayName(memberMap.get(m.spouse1Id))}</span>
-                <span className="mx-1.5 text-gray-400">⚭</span>
+                <span className="text-gray-400">⚭</span>
                 <span className="font-medium">{displayName(memberMap.get(m.spouse2Id))}</span>
-                {m.marriageDate && (
-                  <span className="ml-2 text-xs text-gray-500">
-                    ({new Date(m.marriageDate).toLocaleDateString('ja-JP')})
-                  </span>
+                {editingMarriageId === m.id ? (
+                  <input
+                    type="date"
+                    value={editMarriageDate}
+                    onChange={(e) => setEditMarriageDate(e.target.value)}
+                    className="px-2 py-1 border border-gray-300 rounded text-xs focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none"
+                  />
+                ) : (
+                  m.marriageDate && (
+                    <span className="text-xs text-gray-500">
+                      ({new Date(m.marriageDate).toLocaleDateString('ja-JP')})
+                    </span>
+                  )
                 )}
               </div>
-              <button
-                onClick={() => onRemoveMarriage(m.id)}
-                className="flex-shrink-0 px-3 py-1 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200 transition"
-              >
-                削除
-              </button>
+              <div className="flex-shrink-0 flex gap-2">
+                {editingMarriageId === m.id ? (
+                  <>
+                    <button
+                      onClick={() => {
+                        onUpdateMarriage(m.id, editMarriageDate)
+                        setEditingMarriageId(null)
+                      }}
+                      className="px-3 py-1 text-xs bg-indigo-100 text-indigo-700 rounded hover:bg-indigo-200 transition"
+                    >
+                      保存
+                    </button>
+                    <button
+                      onClick={() => setEditingMarriageId(null)}
+                      className="px-3 py-1 text-xs border border-gray-300 text-gray-700 rounded hover:bg-gray-50 transition"
+                    >
+                      キャンセル
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      onClick={() => {
+                        setEditingMarriageId(m.id)
+                        setEditMarriageDate(m.marriageDate ?? '')
+                      }}
+                      className="px-3 py-1 text-xs bg-indigo-100 text-indigo-700 rounded hover:bg-indigo-200 transition"
+                    >
+                      編集
+                    </button>
+                    <button
+                      onClick={() => onRemoveMarriage(m.id)}
+                      className="px-3 py-1 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200 transition"
+                    >
+                      削除
+                    </button>
+                  </>
+                )}
+              </div>
             </div>
           ))}
         </div>
