@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { FamilyMember, Marriage, ParentChildRelation } from '@/types'
 import { computeFamilyTreeLayout, NODE_WIDTH, NODE_HEIGHT } from '@/utils/treeLayout'
 import { calculateAge } from '@/utils/age'
@@ -36,11 +36,30 @@ export default function FamilyTreeView({
   parentChildRelations,
 }: FamilyTreeViewProps) {
   const [scale, setScale] = useState(1)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const hasAutoFitRef = useRef(false)
 
   const layout = useMemo(
     () => computeFamilyTreeLayout(members, marriages, parentChildRelations),
     [members, marriages, parentChildRelations]
   )
+
+  const padding = 20
+  const svgWidth = layout.width + padding * 2
+  const svgHeight = layout.height + padding * 2
+
+  // スマホなど画面が狭い場合、初期表示で家系図が画面幅に収まるように
+  // 一度だけ自動でスケールを合わせる（ユーザーが手動でズームした後は上書きしない）
+  useEffect(() => {
+    if (hasAutoFitRef.current || svgWidth === 0) return
+    const containerWidth = containerRef.current?.clientWidth
+    if (!containerWidth) return
+    hasAutoFitRef.current = true
+    const fitScale = Math.min(1, (containerWidth - 8) / svgWidth)
+    if (fitScale < 1) {
+      setScale(Math.max(0.4, +fitScale.toFixed(2)))
+    }
+  }, [svgWidth])
 
   if (members.length === 0) {
     return (
@@ -50,17 +69,13 @@ export default function FamilyTreeView({
     )
   }
 
-  const padding = 20
-  const svgWidth = layout.width + padding * 2
-  const svgHeight = layout.height + padding * 2
-
   return (
     <div>
       {/* Zoom controls */}
       <div className="flex items-center gap-2 mb-3">
         <button
           onClick={() => setScale((s) => Math.max(0.4, +(s - 0.1).toFixed(2)))}
-          className="px-2 md:px-3 py-1 text-sm bg-gray-100 hover:bg-gray-200 rounded transition"
+          className="min-w-[44px] min-h-[44px] md:min-w-0 md:min-h-0 px-2 md:px-3 py-1 text-base md:text-sm bg-gray-100 hover:bg-gray-200 rounded transition"
           aria-label="縮小"
         >
           −
@@ -70,14 +85,14 @@ export default function FamilyTreeView({
         </span>
         <button
           onClick={() => setScale((s) => Math.min(2, +(s + 0.1).toFixed(2)))}
-          className="px-2 md:px-3 py-1 text-sm bg-gray-100 hover:bg-gray-200 rounded transition"
+          className="min-w-[44px] min-h-[44px] md:min-w-0 md:min-h-0 px-2 md:px-3 py-1 text-base md:text-sm bg-gray-100 hover:bg-gray-200 rounded transition"
           aria-label="拡大"
         >
           ＋
         </button>
         <button
           onClick={() => setScale(1)}
-          className="px-2 md:px-3 py-1 text-sm bg-gray-100 hover:bg-gray-200 rounded transition"
+          className="min-h-[44px] md:min-h-0 px-3 md:px-3 py-1 text-sm bg-gray-100 hover:bg-gray-200 rounded transition"
         >
           リセット
         </button>
@@ -108,7 +123,11 @@ export default function FamilyTreeView({
       </div>
 
       {/* Scrollable canvas */}
-      <div className="overflow-auto border border-gray-200 rounded-lg bg-gray-50" style={{ maxHeight: '70vh' }}>
+      <div
+        ref={containerRef}
+        className="overflow-auto border border-gray-200 rounded-lg bg-gray-50"
+        style={{ maxHeight: '70vh' }}
+      >
         <svg
           width={svgWidth * scale}
           height={svgHeight * scale}
