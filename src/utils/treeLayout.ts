@@ -111,17 +111,39 @@ export function computeFamilyTreeLayout(
   })
   const generations = Array.from(byGen.keys()).sort((a, b) => a - b)
 
+  // 生年月日が分かっているメンバーを古い順に、不明なメンバーは末尾に回す
+  function compareBirthDate(a: string, b: string): number {
+    const da = memberMap.get(a)!.birthDate
+    const db = memberMap.get(b)!.birthDate
+    if (da && db) return da.localeCompare(db)
+    if (da) return -1
+    if (db) return 1
+    return 0
+  }
+
   // Cluster a generation's members so spouses sit next to each other
+  // （配偶者同士は男性を左（先）にする）
   function clusterBySpouse(ids: string[]): string[] {
     const seen = new Set<string>()
     const idSet = new Set(ids)
     const result: string[] = []
     ids.forEach((id) => {
       if (seen.has(id)) return
-      result.push(id)
-      seen.add(id)
-      const spouses = (spouseOf.get(id) || []).filter((s) => idSet.has(s))
-      spouses.forEach((s) => {
+      const spouses = (spouseOf.get(id) || []).filter((s) => idSet.has(s) && !seen.has(s))
+      if (spouses.length === 0) {
+        result.push(id)
+        seen.add(id)
+        return
+      }
+      const [primarySpouse, ...restSpouses] = spouses
+      const idIsMale = memberMap.get(id)!.gender === 'male'
+      const spouseIsMale = memberMap.get(primarySpouse)!.gender === 'male'
+      const pair = !idIsMale && spouseIsMale ? [primarySpouse, id] : [id, primarySpouse]
+      pair.forEach((m) => {
+        result.push(m)
+        seen.add(m)
+      })
+      restSpouses.forEach((s) => {
         if (!seen.has(s)) {
           result.push(s)
           seen.add(s)
@@ -136,9 +158,7 @@ export function computeFamilyTreeLayout(
   generations.forEach((g, idx) => {
     let ids = byGen.get(g)!
     if (idx === 0) {
-      ids = clusterBySpouse(
-        ids.slice().sort((a, b) => memberMap.get(a)!.createdAt - memberMap.get(b)!.createdAt)
-      )
+      ids = clusterBySpouse(ids.slice().sort(compareBirthDate))
     } else {
       ids = ids.slice().sort((a, b) => {
         const pa = parentsOf.get(a) || []
@@ -149,7 +169,9 @@ export function computeFamilyTreeLayout(
         const avgB = pb.length
           ? pb.reduce((s, p) => s + (orderIndex.get(p) ?? 0), 0) / pb.length
           : Number.MAX_SAFE_INTEGER
-        return avgA - avgB
+        // 同じ親を持つ兄弟同士（avgが同じ）は生年月日順に並べる
+        if (avgA !== avgB) return avgA - avgB
+        return compareBirthDate(a, b)
       })
       ids = clusterBySpouse(ids)
     }
