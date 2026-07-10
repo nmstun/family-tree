@@ -131,15 +131,13 @@ export function useFamilyTree() {
 
       if (!treeId) {
         const { data: newTree, error } = await supabase
-          .from('family_trees')
-          .insert({ name: '我が家の家系図' })
-          .select()
+          .rpc('create_family_tree', { p_name: '我が家の家系図' })
           .single()
         if (error || !newTree || cancelled) {
           setLoading(false)
           return
         }
-        treeId = newTree.id
+        treeId = (newTree as TreeRow).id
       }
 
       if (cancelled || !treeId) {
@@ -194,7 +192,7 @@ export function useFamilyTree() {
     []
   )
 
-  // Add member
+  // メンバーを追加
   const addMember = useCallback(
     async (member: Omit<FamilyMember, 'id' | 'createdAt'>) => {
       const treeId = treeIdRef.current
@@ -215,7 +213,7 @@ export function useFamilyTree() {
     [supabase, withSyncStatus]
   )
 
-  // Update member
+  // メンバーを更新
   const updateMember = useCallback(
     async (id: string, updates: Partial<FamilyMember>) => {
       const dbUpdates: Record<string, unknown> = {}
@@ -232,7 +230,7 @@ export function useFamilyTree() {
     [supabase, withSyncStatus]
   )
 
-  // Delete member
+  // メンバーを削除
   // marriages / parent_child_relations は DB 側の ON DELETE CASCADE で
   // 自動的に連動削除される
   const deleteMember = useCallback(
@@ -242,7 +240,7 @@ export function useFamilyTree() {
     [supabase, withSyncStatus]
   )
 
-  // Add marriage
+  // 婚姻関係を追加
   const addMarriage = useCallback(
     async (spouse1Id: string, spouse2Id: string, marriageDate?: string) => {
       const treeId = treeIdRef.current
@@ -259,7 +257,7 @@ export function useFamilyTree() {
     [supabase, withSyncStatus]
   )
 
-  // Remove marriage
+  // 婚姻関係を削除
   const removeMarriage = useCallback(
     async (id: string) => {
       await withSyncStatus(supabase.from('marriages').delete().eq('id', id))
@@ -267,7 +265,7 @@ export function useFamilyTree() {
     [supabase, withSyncStatus]
   )
 
-  // Add parent-child relation
+  // 親子関係を追加
   // 親に配偶者がいる場合は、配偶者も自動的に同じ子の親として登録する
   const addParentChild = useCallback(
     async (parentId: string, childId: string) => {
@@ -309,7 +307,7 @@ export function useFamilyTree() {
     [tree, supabase, withSyncStatus]
   )
 
-  // Remove parent-child relation
+  // 親子関係を削除
   const removeParentChild = useCallback(
     async (parentId: string, childId: string) => {
       const treeId = treeIdRef.current
@@ -326,7 +324,7 @@ export function useFamilyTree() {
     [supabase, withSyncStatus]
   )
 
-  // Get member by ID
+  // IDでメンバーを取得
   const getMember = useCallback(
     (id: string) => {
       return tree?.members.find((m) => m.id === id)

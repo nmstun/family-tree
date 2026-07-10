@@ -8,6 +8,7 @@ import MemberList from './MemberList'
 import RelationshipManager from './RelationshipManager'
 import FamilyTreeView from './FamilyTreeView'
 import SignOutButton from './SignOutButton'
+import CollaboratorsPanel from './CollaboratorsPanel'
 
 export default function FamilyTreeApp() {
   const {
@@ -22,9 +23,9 @@ export default function FamilyTreeApp() {
     addParentChild,
     removeParentChild,
   } = useFamilyTree()
-  const [activeTab, setActiveTab] = useState<'members' | 'relations' | 'view' | 'export'>(
-    'members'
-  )
+  const [activeTab, setActiveTab] = useState<
+    'members' | 'relations' | 'view' | 'share' | 'export'
+  >('members')
 
   if (loading || !tree) {
     return (
@@ -41,7 +42,7 @@ export default function FamilyTreeApp() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
-      {/* Header */}
+      {/* ヘッダー */}
       <header className="bg-white shadow">
         <div className="max-w-6xl mx-auto px-3 md:px-4 py-4 md:py-6 flex items-start justify-between gap-3">
           <div>
@@ -52,7 +53,7 @@ export default function FamilyTreeApp() {
         </div>
       </header>
 
-      {/* Navigation */}
+      {/* ナビゲーション */}
       <nav className="bg-white border-b border-gray-200 sticky top-0 z-10">
         <div className="max-w-6xl mx-auto px-3 md:px-4 flex gap-2 md:gap-4 overflow-x-auto">
           <button
@@ -86,6 +87,16 @@ export default function FamilyTreeApp() {
             🌳 家系図表示
           </button>
           <button
+            onClick={() => setActiveTab('share')}
+            className={`px-2 md:px-4 py-2 md:py-3 text-sm md:text-base font-medium border-b-2 transition whitespace-nowrap ${
+              activeTab === 'share'
+                ? 'border-indigo-500 text-indigo-600'
+                : 'border-transparent text-gray-700 hover:text-gray-900'
+            }`}
+          >
+            🤝 共有
+          </button>
+          <button
             onClick={() => setActiveTab('export')}
             className={`px-2 md:px-4 py-2 md:py-3 text-sm md:text-base font-medium border-b-2 transition whitespace-nowrap ${
               activeTab === 'export'
@@ -98,7 +109,7 @@ export default function FamilyTreeApp() {
         </div>
       </nav>
 
-      {/* Content */}
+      {/* コンテンツ */}
       <main className="max-w-6xl mx-auto px-3 md:px-4 py-4 md:py-8">
         {activeTab === 'members' && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-8">
@@ -151,6 +162,15 @@ export default function FamilyTreeApp() {
           </div>
         )}
 
+        {activeTab === 'share' && (
+          <div className="bg-white rounded-lg shadow p-4 md:p-6">
+            <h2 className="text-lg md:text-2xl font-bold text-gray-900 mb-3 md:mb-4">
+              家系図を共有
+            </h2>
+            <CollaboratorsPanel treeId={tree.id} />
+          </div>
+        )}
+
         {activeTab === 'export' && (
           <div className="bg-white rounded-lg shadow p-4 md:p-6">
             <h2 className="text-lg md:text-2xl font-bold text-gray-900 mb-3 md:mb-4">
@@ -168,7 +188,7 @@ export default function FamilyTreeApp() {
           </div>
         )}
 
-        {/* Sync status */}
+        {/* 同期ステータス */}
         <div className="mt-4 md:mt-8 flex items-center gap-2">
           {syncStatus === 'syncing' && (
             <span className="text-xs md:text-sm text-gray-500">同期中...</span>
