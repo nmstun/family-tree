@@ -2,9 +2,11 @@
 
 import { useMemo, useState } from 'react'
 import { FamilyMember } from '@/types'
-import { calculateAge } from '@/utils/age'
+import { calculateAge, calculateGrade } from '@/utils/age'
 import { sortMembersByName } from '@/utils/sortMembers'
 import MemberForm from './MemberForm'
+
+const OTOSHIDAMA_MAX_AGE = 22
 
 interface MemberListProps {
   members: FamilyMember[]
@@ -15,13 +17,20 @@ interface MemberListProps {
 export default function MemberList({ members, onUpdate, onDelete }: MemberListProps) {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [query, setQuery] = useState('')
+  const [otoshidamaOnly, setOtoshidamaOnly] = useState(false)
 
   const sortedMembers = useMemo(() => sortMembersByName(members), [members])
   const filteredMembers = useMemo(() => {
     const q = query.trim()
-    if (!q) return sortedMembers
-    return sortedMembers.filter((m) => `${m.lastName}${m.firstName}`.includes(q))
-  }, [sortedMembers, query])
+    return sortedMembers.filter((m) => {
+      if (q && !`${m.lastName}${m.firstName}`.includes(q)) return false
+      if (otoshidamaOnly) {
+        const age = calculateAge(m.birthDate, m.deathDate)
+        if (m.deathDate || age === null || age > OTOSHIDAMA_MAX_AGE) return false
+      }
+      return true
+    })
+  }, [sortedMembers, query, otoshidamaOnly])
 
   if (members.length === 0) {
     return (
@@ -38,8 +47,17 @@ export default function MemberList({ members, onUpdate, onDelete }: MemberListPr
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         placeholder="名前で検索..."
-        className="w-full mb-2 md:mb-3 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none text-sm"
+        className="w-full mb-2 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none text-sm"
       />
+      <label className="flex items-center gap-1.5 mb-2 md:mb-3 text-xs md:text-sm text-gray-600 cursor-pointer w-fit">
+        <input
+          type="checkbox"
+          checked={otoshidamaOnly}
+          onChange={(e) => setOtoshidamaOnly(e.target.checked)}
+          className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+        />
+        🧧 お年玉対象のみ表示（{OTOSHIDAMA_MAX_AGE}歳以下）
+      </label>
 
       {filteredMembers.length === 0 ? (
         <div className="bg-white rounded-lg shadow p-4 md:p-6 text-center text-gray-500 text-sm md:text-base">
@@ -102,6 +120,8 @@ export default function MemberList({ members, onUpdate, onDelete }: MemberListPr
                               member.birthDate
                             ).toLocaleDateString('ja-JP')}）`
                       }`}
+                    {calculateGrade(member.birthDate, member.deathDate) &&
+                      ` ・ ${calculateGrade(member.birthDate, member.deathDate)}`}
                   </p>
                 </div>
 
