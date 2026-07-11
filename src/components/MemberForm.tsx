@@ -2,6 +2,7 @@
 
 import { useRef, useState } from 'react'
 import { FamilyMember, Gender } from '@/types'
+import PhotoCropModal from './PhotoCropModal'
 
 interface MemberFormProps {
   initialMember?: FamilyMember
@@ -20,7 +21,9 @@ export default function MemberForm({ initialMember, onSubmit, onCancel }: Member
     notes: initialMember?.notes ?? '',
   })
   const [photoPreview, setPhotoPreview] = useState<string | null>(initialMember?.photo ?? null)
+  const [cropSource, setCropSource] = useState<string | null>(null)
   const lastNameInputRef = useRef<HTMLInputElement>(null)
+  const photoInputRef = useRef<HTMLInputElement>(null)
 
   const handleInputChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
@@ -38,9 +41,20 @@ export default function MemberForm({ initialMember, onSubmit, onCancel }: Member
 
     const reader = new FileReader()
     reader.onloadend = () => {
-      setPhotoPreview(reader.result as string)
+      setCropSource(reader.result as string)
     }
     reader.readAsDataURL(file)
+  }
+
+  const handleCropComplete = (croppedDataUrl: string) => {
+    setPhotoPreview(croppedDataUrl)
+    setCropSource(null)
+    if (photoInputRef.current) photoInputRef.current.value = ''
+  }
+
+  const handleCropCancel = () => {
+    setCropSource(null)
+    if (photoInputRef.current) photoInputRef.current.value = ''
   }
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -83,6 +97,7 @@ export default function MemberForm({ initialMember, onSubmit, onCancel }: Member
   }
 
   return (
+    <>
     <form onSubmit={handleSubmit} className="bg-white rounded-lg shadow p-4 md:p-6">
       {/* Name Fields */}
       <div className="grid grid-cols-2 gap-3 md:gap-4 mb-4">
@@ -165,6 +180,7 @@ export default function MemberForm({ initialMember, onSubmit, onCancel }: Member
           写真
         </label>
         <input
+          ref={photoInputRef}
           type="file"
           accept="image/*"
           onChange={handlePhotoChange}
@@ -215,5 +231,14 @@ export default function MemberForm({ initialMember, onSubmit, onCancel }: Member
         )}
       </div>
     </form>
+
+    {cropSource && (
+      <PhotoCropModal
+        imageSrc={cropSource}
+        onCancel={handleCropCancel}
+        onComplete={handleCropComplete}
+      />
+    )}
+    </>
   )
 }
