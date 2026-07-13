@@ -215,7 +215,37 @@ export function computeFamilyTreeLayout(
 
   // --- Step 5: assign coordinates（末端の世代から上に向かって配置） ---
   const positions = new Map<string, { x: number; y: number }>()
+  const nodeByMemberId = new Map<string, LayoutNode>()
+  const clusterOf = new Map<string, string[]>()
   const nodes: LayoutNode[] = []
+
+  // 兄弟（無関係な隣のクラスタ）との重なりを避けるために親が右にずれた場合、
+  // 位置決め済みの子孫（下の世代）を置き去りにすると、親子の線が斜めに
+  // ズレて「子が親の真下に来ていない」ように見えてしまう。
+  // ずれた分だけ子孫全員も一緒に横へずらし、親子の位置関係を保つ。
+  // 子だけでなく、その配偶者（クラスタ全体）も一緒にずらさないと
+  // 夫婦の並びが崩れてしまうため、クラスタ単位でずらす。
+  function shiftDescendants(rootIds: string[], delta: number) {
+    if (delta === 0) return
+    const queue = [...rootIds]
+    const seen = new Set<string>()
+    while (queue.length > 0) {
+      const id = queue.shift()!
+      ;(childrenOf.get(id) || []).forEach((childId) => {
+        if (seen.has(childId)) return
+        const cluster = clusterOf.get(childId) || [childId]
+        cluster.forEach((memberId) => {
+          if (seen.has(memberId)) return
+          seen.add(memberId)
+          const pos = positions.get(memberId)
+          const node = nodeByMemberId.get(memberId)
+          if (pos) pos.x += delta
+          if (node) node.x += delta
+          queue.push(memberId)
+        })
+      })
+    }
+  }
 
   for (let idx = generations.length - 1; idx >= 0; idx--) {
     const g = generations[idx]
@@ -240,13 +270,19 @@ export function computeFamilyTreeLayout(
           : null
 
       // 兄弟同士が重ならないよう、cursorX より左には置かない
-      const left = Math.max(idealCenterX !== null ? idealCenterX - cw / 2 : cursorX, cursorX)
+      const desiredLeft = idealCenterX !== null ? idealCenterX - cw / 2 : cursorX
+      const left = Math.max(desiredLeft, cursorX)
 
       cluster.forEach((memberId, i) => {
         const x = left + i * (NODE_WIDTH + H_GAP)
+        const node: LayoutNode = { member: memberMap.get(memberId)!, x, y, generation: g }
         positions.set(memberId, { x, y })
-        nodes.push({ member: memberMap.get(memberId)!, x, y, generation: g })
+        nodeByMemberId.set(memberId, node)
+        clusterOf.set(memberId, cluster)
+        nodes.push(node)
       })
+
+      shiftDescendants(cluster, left - desiredLeft)
 
       cursorX = left + cw + H_GAP
     })
