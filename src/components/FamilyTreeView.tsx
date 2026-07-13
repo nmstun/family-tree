@@ -27,7 +27,11 @@ function formatAge(member: FamilyMember) {
   if (!member.birthDate) return ''
   const age = calculateAge(member.birthDate, member.deathDate)
   if (age === null) return ''
-  return member.deathDate ? `享年${age}` : `${age}歳`
+  const birthPrecision = member.birthDatePrecision ?? 'day'
+  const deathPrecision = member.deathDatePrecision ?? 'day'
+  const isEstimate = birthPrecision !== 'day' || (!!member.deathDate && deathPrecision !== 'day')
+  const label = isEstimate ? '(推定)' : ''
+  return member.deathDate ? `享年${age}${label}` : `${age}${label}歳`
 }
 
 export default function FamilyTreeView({

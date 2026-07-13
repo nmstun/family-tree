@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import { FamilyMember } from '@/types'
-import { calculateAge, calculateGrade } from '@/utils/age'
+import { calculateAge, calculateGrade, formatAgeSummary } from '@/utils/age'
 import { sortMembersByName } from '@/utils/sortMembers'
 import MemberForm from './MemberForm'
 
@@ -108,20 +108,9 @@ export default function MemberList({ members, onUpdate, onDelete }: MemberListPr
                     {member.gender === 'male' && '男性'}
                     {member.gender === 'female' && '女性'}
                     {member.gender === 'other' && 'その他'}
-                    {member.birthDate &&
-                      ` ・ ${
-                        member.deathDate
-                          ? `享年${calculateAge(member.birthDate, member.deathDate)}（${new Date(
-                              member.birthDate
-                            ).toLocaleDateString('ja-JP')} - ${new Date(
-                              member.deathDate
-                            ).toLocaleDateString('ja-JP')}）`
-                          : `${calculateAge(member.birthDate)}歳（${new Date(
-                              member.birthDate
-                            ).toLocaleDateString('ja-JP')}）`
-                      }`}
-                    {calculateGrade(member.birthDate, member.deathDate) &&
-                      ` ・ ${calculateGrade(member.birthDate, member.deathDate)}`}
+                    {formatAgeSummary(member) && ` ・ ${formatAgeSummary(member)}`}
+                    {calculateGrade(member.birthDate, member.deathDate, member.birthDatePrecision) &&
+                      ` ・ ${calculateGrade(member.birthDate, member.deathDate, member.birthDatePrecision)}`}
                   </p>
                 </div>
 

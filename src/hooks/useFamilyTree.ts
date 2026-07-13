@@ -1,7 +1,14 @@
 'use client'
 
 import { useState, useCallback, useEffect, useRef } from 'react'
-import { FamilyTree, FamilyMember, Marriage, ParentChildRelation, Gender } from '@/types'
+import {
+  FamilyTree,
+  FamilyMember,
+  Marriage,
+  ParentChildRelation,
+  Gender,
+  DatePrecision,
+} from '@/types'
 import { createClient } from '@/lib/supabase/client'
 import { wouldCreateCycle } from '@/utils/familyTreeValidation'
 
@@ -12,7 +19,9 @@ type MemberRow = {
   last_name: string
   first_name: string
   birth_date: string | null
+  birth_date_precision: DatePrecision
   death_date: string | null
+  death_date_precision: DatePrecision
   gender: Gender
   photo: string | null
   notes: string | null
@@ -44,7 +53,9 @@ function mapMember(row: MemberRow): FamilyMember {
     lastName: row.last_name,
     firstName: row.first_name,
     birthDate: row.birth_date ?? undefined,
+    birthDatePrecision: row.birth_date_precision,
     deathDate: row.death_date ?? undefined,
+    deathDatePrecision: row.death_date_precision,
     gender: row.gender,
     photo: row.photo ?? undefined,
     notes: row.notes ?? undefined,
@@ -203,7 +214,9 @@ export function useFamilyTree() {
           last_name: member.lastName,
           first_name: member.firstName,
           birth_date: member.birthDate || null,
+          birth_date_precision: member.birthDatePrecision || 'day',
           death_date: member.deathDate || null,
+          death_date_precision: member.deathDatePrecision || 'day',
           gender: member.gender,
           photo: member.photo || null,
           notes: member.notes || null,
@@ -220,7 +233,11 @@ export function useFamilyTree() {
       if (updates.lastName !== undefined) dbUpdates.last_name = updates.lastName
       if (updates.firstName !== undefined) dbUpdates.first_name = updates.firstName
       if (updates.birthDate !== undefined) dbUpdates.birth_date = updates.birthDate || null
+      if (updates.birthDatePrecision !== undefined)
+        dbUpdates.birth_date_precision = updates.birthDatePrecision
       if (updates.deathDate !== undefined) dbUpdates.death_date = updates.deathDate || null
+      if (updates.deathDatePrecision !== undefined)
+        dbUpdates.death_date_precision = updates.deathDatePrecision
       if (updates.gender !== undefined) dbUpdates.gender = updates.gender
       if (updates.photo !== undefined) dbUpdates.photo = updates.photo || null
       if (updates.notes !== undefined) dbUpdates.notes = updates.notes || null

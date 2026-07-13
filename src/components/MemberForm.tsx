@@ -1,8 +1,10 @@
 'use client'
 
 import { useRef, useState } from 'react'
-import { FamilyMember, Gender } from '@/types'
+import { FamilyMember, Gender, DatePrecision } from '@/types'
+import { toFullDate, toInputValue } from '@/utils/datePrecision'
 import PhotoCropModal from './PhotoCropModal'
+import PrecisionDateInput from './PrecisionDateInput'
 
 interface MemberFormProps {
   initialMember?: FamilyMember
@@ -16,10 +18,20 @@ export default function MemberForm({ initialMember, onSubmit, onCancel }: Member
     lastName: initialMember?.lastName ?? '',
     firstName: initialMember?.firstName ?? '',
     gender: (initialMember?.gender ?? 'male') as Gender,
-    birthDate: initialMember?.birthDate ?? '',
-    deathDate: initialMember?.deathDate ?? '',
     notes: initialMember?.notes ?? '',
   })
+  const [birthDatePrecision, setBirthDatePrecision] = useState<DatePrecision>(
+    initialMember?.birthDatePrecision ?? 'day'
+  )
+  const [birthDateInput, setBirthDateInput] = useState(
+    initialMember?.birthDate ? toInputValue(initialMember.birthDate, birthDatePrecision) : ''
+  )
+  const [deathDatePrecision, setDeathDatePrecision] = useState<DatePrecision>(
+    initialMember?.deathDatePrecision ?? 'day'
+  )
+  const [deathDateInput, setDeathDateInput] = useState(
+    initialMember?.deathDate ? toInputValue(initialMember.deathDate, deathDatePrecision) : ''
+  )
   const [photoPreview, setPhotoPreview] = useState<string | null>(initialMember?.photo ?? null)
   const [cropSource, setCropSource] = useState<string | null>(null)
   const lastNameInputRef = useRef<HTMLInputElement>(null)
@@ -66,6 +78,22 @@ export default function MemberForm({ initialMember, onSubmit, onCancel }: Member
     if (photoInputRef.current) photoInputRef.current.value = ''
   }
 
+  // 精度を変えたら、現在の入力値を新しい精度の表示形式に変換し直す
+  // （年月日→年のみ、のように精度を落とす場合は情報が失われる）
+  const handleBirthPrecisionChange = (precision: DatePrecision) => {
+    setBirthDatePrecision(precision)
+    if (birthDateInput) {
+      setBirthDateInput(toInputValue(toFullDate(birthDateInput, birthDatePrecision), precision))
+    }
+  }
+
+  const handleDeathPrecisionChange = (precision: DatePrecision) => {
+    setDeathDatePrecision(precision)
+    if (deathDateInput) {
+      setDeathDateInput(toInputValue(toFullDate(deathDateInput, deathDatePrecision), precision))
+    }
+  }
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
 
@@ -80,8 +108,10 @@ export default function MemberForm({ initialMember, onSubmit, onCancel }: Member
       gender: formData.gender,
       // 空文字を undefined に変換すると updateMember 側の「undefined なら更新しない」
       // 判定に引っかかり、編集時に値をクリアできなくなるため、そのまま渡す
-      birthDate: formData.birthDate,
-      deathDate: formData.deathDate,
+      birthDate: toFullDate(birthDateInput, birthDatePrecision),
+      birthDatePrecision,
+      deathDate: toFullDate(deathDateInput, deathDatePrecision),
+      deathDatePrecision,
       photo: photoPreview ?? '',
       notes: formData.notes,
     })
@@ -93,10 +123,12 @@ export default function MemberForm({ initialMember, onSubmit, onCancel }: Member
       lastName: '',
       firstName: '',
       gender: 'male',
-      birthDate: '',
-      deathDate: '',
       notes: '',
     })
+    setBirthDatePrecision('day')
+    setBirthDateInput('')
+    setDeathDatePrecision('day')
+    setDeathDateInput('')
     setPhotoPreview(null)
     // ブラウザは Enter キーでの送信時に送信ボタンへフォーカスを移すことがあるため、
     // その処理が終わった後に確実に反映されるよう1ティック遅らせて実行する
@@ -156,32 +188,22 @@ export default function MemberForm({ initialMember, onSubmit, onCancel }: Member
       </div>
 
       {/* Birth Date */}
-      <div className="mb-4">
-        <label className="block text-sm font-medium text-gray-700 mb-1 md:mb-2">
-          生年月日
-        </label>
-        <input
-          type="date"
-          name="birthDate"
-          value={formData.birthDate}
-          onChange={handleInputChange}
-          className="w-full px-3 md:px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none text-sm md:text-base"
-        />
-      </div>
+      <PrecisionDateInput
+        label="生年月日"
+        precision={birthDatePrecision}
+        value={birthDateInput}
+        onPrecisionChange={handleBirthPrecisionChange}
+        onValueChange={setBirthDateInput}
+      />
 
       {/* Death Date */}
-      <div className="mb-4">
-        <label className="block text-sm font-medium text-gray-700 mb-1 md:mb-2">
-          没年月日
-        </label>
-        <input
-          type="date"
-          name="deathDate"
-          value={formData.deathDate}
-          onChange={handleInputChange}
-          className="w-full px-3 md:px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none text-sm md:text-base"
-        />
-      </div>
+      <PrecisionDateInput
+        label="没年月日"
+        precision={deathDatePrecision}
+        value={deathDateInput}
+        onPrecisionChange={handleDeathPrecisionChange}
+        onValueChange={setDeathDateInput}
+      />
 
       {/* Photo */}
       <div className="mb-4">
