@@ -61,45 +61,53 @@ export function computeFamilyTreeLayout(
   })
 
   // --- Step 1: assign a generation (row) to every member ---
+  // 親子関係（子は親の1つ下の世代）・配偶者関係（同じ世代）を「制約」として扱い、
+  // つながっている人たち全体で矛盾なく世代を割り当てる。
+  // 単純に「親の登録がない人＝最上段（0世代目）」と決め打ちすると、
+  // その人の子が結婚相手を通じてもっと深い家系と繋がっている場合に、
+  // 子だけが配偶者の世代に合わせて下にずれ、親は最上段に取り残されてしまう
+  // （＝血のつながった親なのに、その子の配偶者の親より何世代も上に表示される）。
+  // そのため親→子・配偶者同士の「相対的な世代差」を基準にたどり、
+  // つながっている一族（連結成分）ごとに矛盾のない世代を求める。
   const generation = new Map<string, number>()
-  const visiting = new Set<string>()
-
-  function calcGen(id: string): number {
-    if (generation.has(id)) return generation.get(id)!
-    if (visiting.has(id)) return 0 // guard against accidental cycles
-    visiting.add(id)
-    const parents = parentsOf.get(id) || []
-    const gen = parents.length > 0 ? Math.max(...parents.map((p) => calcGen(p) + 1)) : 0
-    visiting.delete(id)
-    generation.set(id, gen)
-    return gen
-  }
-  members.forEach((m) => calcGen(m.id))
-
-  // --- Step 2: equalize spouses' generations and re-propagate to children ---
-  const maxIterations = members.length + validMarriages.length + 5
-  for (let i = 0; i < maxIterations; i++) {
-    let changed = false
-    validMarriages.forEach((m) => {
-      const g1 = generation.get(m.spouse1Id)!
-      const g2 = generation.get(m.spouse2Id)!
-      if (g1 !== g2) {
-        const g = Math.max(g1, g2)
-        generation.set(m.spouse1Id, g)
-        generation.set(m.spouse2Id, g)
-        changed = true
-      }
-    })
+  {
+    const adjacency = new Map<string, { to: string; delta: number }[]>()
+    const addEdge = (from: string, to: string, delta: number) => {
+      if (!adjacency.has(from)) adjacency.set(from, [])
+      adjacency.get(from)!.push({ to, delta })
+    }
     relations.forEach((r) => {
       if (!memberMap.has(r.parentId) || !memberMap.has(r.childId)) return
-      const pg = generation.get(r.parentId)!
-      const cg = generation.get(r.childId)!
-      if (cg <= pg) {
-        generation.set(r.childId, pg + 1)
-        changed = true
-      }
+      addEdge(r.parentId, r.childId, 1)
+      addEdge(r.childId, r.parentId, -1)
     })
-    if (!changed) break
+    validMarriages.forEach((m) => {
+      addEdge(m.spouse1Id, m.spouse2Id, 0)
+      addEdge(m.spouse2Id, m.spouse1Id, 0)
+    })
+
+    const visited = new Set<string>()
+    members.forEach((root) => {
+      if (visited.has(root.id)) return
+      // 連結成分ごとにBFSで相対的な世代差をたどる
+      const relative = new Map<string, number>()
+      relative.set(root.id, 0)
+      visited.add(root.id)
+      const queue = [root.id]
+      while (queue.length > 0) {
+        const id = queue.shift()!
+        const g = relative.get(id)!
+        ;(adjacency.get(id) || []).forEach(({ to, delta }) => {
+          if (visited.has(to)) return
+          visited.add(to)
+          relative.set(to, g + delta)
+          queue.push(to)
+        })
+      }
+      // その成分内でいちばん上（最小値）を0世代目として揃える
+      const minGen = Math.min(...Array.from(relative.values()))
+      relative.forEach((g, id) => generation.set(id, g - minGen))
+    })
   }
 
   // --- Step 3: group members by generation ---
