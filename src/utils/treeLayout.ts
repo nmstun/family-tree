@@ -288,6 +288,53 @@ export function computeFamilyTreeLayout(
     })
   }
 
+  // shiftDescendants は「親子の位置合わせ」のために子孫をずらすが、その際に
+  // 同じ行にいる無関係な兄弟クラスタと重なってしまうことがある
+  // （兄弟クラスタ側は自分がずれたことを知らないため）。
+  // 全世代を上から下に向かって走査し、隣のクラスタと重なっていれば右に押し出し、
+  // その分だけさらに子孫も連動してずらす、というのを変化がなくなるまで繰り返す。
+  function resolveOverlaps() {
+    for (let pass = 0; pass < 20; pass++) {
+      let changed = false
+      generations.forEach((g) => {
+        const rowClusters = toClusters(byGen.get(g)!)
+        let prevRight = -Infinity
+        rowClusters.forEach((cluster) => {
+          const leftX = Math.min(...cluster.map((m) => positions.get(m)!.x))
+          if (leftX < prevRight + H_GAP) {
+            const push = prevRight + H_GAP - leftX
+            shiftClusterAndDescendants(cluster, push)
+            changed = true
+          }
+          const rightX = Math.max(...cluster.map((m) => positions.get(m)!.x + NODE_WIDTH))
+          prevRight = rightX
+        })
+      })
+      if (!changed) break
+    }
+  }
+
+  function shiftClusterAndDescendants(cluster: string[], delta: number) {
+    if (delta <= 0) return
+    cluster.forEach((memberId) => {
+      const pos = positions.get(memberId)
+      const node = nodeByMemberId.get(memberId)
+      if (pos) pos.x += delta
+      if (node) node.x += delta
+    })
+    const seenChildren = new Set<string>()
+    cluster.forEach((memberId) => {
+      ;(childrenOf.get(memberId) || []).forEach((childId) => {
+        if (seenChildren.has(childId)) return
+        const childCluster = clusterOf.get(childId) || [childId]
+        childCluster.forEach((m) => seenChildren.add(m))
+        shiftClusterAndDescendants(childCluster, delta)
+      })
+    })
+  }
+
+  resolveOverlaps()
+
   nodes.sort((a, b) => a.generation - b.generation)
 
   const width =
