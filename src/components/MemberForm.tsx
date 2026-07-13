@@ -57,6 +57,15 @@ export default function MemberForm({ initialMember, onSubmit, onCancel }: Member
     if (photoInputRef.current) photoInputRef.current.value = ''
   }
 
+  const handleRecrop = () => {
+    if (photoPreview) setCropSource(photoPreview)
+  }
+
+  const handleRemovePhoto = () => {
+    setPhotoPreview(null)
+    if (photoInputRef.current) photoInputRef.current.value = ''
+  }
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
 
@@ -73,7 +82,7 @@ export default function MemberForm({ initialMember, onSubmit, onCancel }: Member
       // 判定に引っかかり、編集時に値をクリアできなくなるため、そのまま渡す
       birthDate: formData.birthDate,
       deathDate: formData.deathDate,
-      photo: photoPreview || undefined,
+      photo: photoPreview ?? '',
       notes: formData.notes,
     })
 
@@ -187,12 +196,28 @@ export default function MemberForm({ initialMember, onSubmit, onCancel }: Member
           className="block w-full text-sm text-gray-500 file:mr-2 md:file:mr-4 file:py-1 md:file:py-2 file:px-3 md:file:px-4 file:rounded-lg file:border-0 file:text-xs md:file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"
         />
         {photoPreview && (
-          <div className="mt-3 relative inline-block">
+          <div className="mt-3 flex items-center gap-3">
             <img
               src={photoPreview}
               alt="Preview"
               className="h-20 w-20 md:h-32 md:w-32 object-cover rounded-lg"
             />
+            <div className="flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={handleRecrop}
+                className="px-3 py-1 text-xs md:text-sm bg-indigo-100 text-indigo-700 rounded hover:bg-indigo-200 transition"
+              >
+                トリミングし直す
+              </button>
+              <button
+                type="button"
+                onClick={handleRemovePhoto}
+                className="px-3 py-1 text-xs md:text-sm bg-red-100 text-red-700 rounded hover:bg-red-200 transition"
+              >
+                写真を削除
+              </button>
+            </div>
           </div>
         )}
       </div>
