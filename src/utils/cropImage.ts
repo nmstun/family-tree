@@ -27,6 +27,11 @@ export async function getCroppedImage(
   const ctx = canvas.getContext('2d')
   if (!ctx) throw new Error('このブラウザは画像のトリミングに対応していません')
 
+  // 縮小して余白ができる場合、はみ出た部分が透明→JPEG変換時に黒くならないよう
+  // 先に白で塗りつぶしておく
+  ctx.fillStyle = '#ffffff'
+  ctx.fillRect(0, 0, outputSize, outputSize)
+
   ctx.drawImage(
     image,
     cropArea.x,

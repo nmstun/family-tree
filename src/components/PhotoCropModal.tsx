@@ -41,6 +41,9 @@ export default function PhotoCropModal({ imageSrc, onCancel, onComplete }: Photo
             image={imageSrc}
             crop={crop}
             zoom={zoom}
+            minZoom={0.4}
+            maxZoom={3}
+            restrictPosition={false}
             aspect={1}
             cropShape="round"
             showGrid={false}
@@ -56,13 +59,16 @@ export default function PhotoCropModal({ imageSrc, onCancel, onComplete }: Photo
           </label>
           <input
             type="range"
-            min={1}
+            min={0.4}
             max={3}
             step={0.01}
             value={zoom}
             onChange={(e) => setZoom(Number(e.target.value))}
             className="w-full"
           />
+          <p className="text-xs text-gray-500 mt-1">
+            顔や頭が切れてしまう場合は、縮小すると余白付きで全体を収められます
+          </p>
         </div>
 
         <div className="flex gap-2 mt-4">
