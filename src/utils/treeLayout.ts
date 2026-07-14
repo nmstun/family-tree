@@ -366,6 +366,13 @@ export function computeFamilyTreeLayout(
     })
   })
 
+  // 親子の線を「親の組み合わせ」（＝兄弟姉妹のまとまり）ごとにグループ化する。
+  // 同じ親から複数の子がいる場合は、そのグループ内では同じ高さの横棒でつなぐ
+  // （＝兄弟であることが分かる）。
+  type ChildLink = { child: FamilyMember; parents: string[] }
+  const groupKey = (parents: string[]) => parents.slice().sort().join(',')
+  const groups = new Map<string, { startX: number; startY: number; children: ChildLink[] }>()
+
   const processedChildren = new Set<string>()
   members.forEach((child) => {
     if (processedChildren.has(child.id)) return
@@ -373,33 +380,66 @@ export function computeFamilyTreeLayout(
     if (parents.length === 0) return
     processedChildren.add(child.id)
 
-    const parentPositions = parents.map((p) => positions.get(p)!)
-    const startX =
-      parentPositions.reduce((s, p) => s + p.x, 0) / parentPositions.length + NODE_WIDTH / 2
-    const startY = Math.max(...parentPositions.map((p) => p.y)) + NODE_HEIGHT
+    const key = groupKey(parents)
+    if (!groups.has(key)) {
+      const parentPositions = parents.map((p) => positions.get(p)!)
+      const startX =
+        parentPositions.reduce((s, p) => s + p.x, 0) / parentPositions.length + NODE_WIDTH / 2
+      const startY = Math.max(...parentPositions.map((p) => p.y)) + NODE_HEIGHT
+      groups.set(key, { startX, startY, children: [] })
+    }
+    groups.get(key)!.children.push({ child, parents })
+  })
 
-    const childPos = positions.get(child.id)!
-    const endX = childPos.x + NODE_WIDTH / 2
-    const endY = childPos.y
-    const midY = (startY + endY) / 2
+  // 世代の境界（同じstartY）から線が伸びる家族が複数あるとき、
+  // 横棒をすべて同じ高さで描くと隣の家族の横棒とつながって見えてしまい、
+  // どの親子の線か分からなくなる。家族（親の組み合わせ）ごとに横棒の高さを
+  // 数段に分けてずらし、それでも他の家族の線と交差する箇所は
+  // addCrossingJumps でジャンプさせて「別の線を飛び越えているだけ」と分かるようにする。
+  const BUS_LANES = 3
+  const laneIndexByGroup = new Map<string, number>()
+  const groupsByStartY = new Map<number, string[]>()
+  groups.forEach((g, key) => {
+    if (!groupsByStartY.has(g.startY)) groupsByStartY.set(g.startY, [])
+    groupsByStartY.get(g.startY)!.push(key)
+  })
+  groupsByStartY.forEach((keys) => {
+    keys
+      .slice()
+      .sort((a, b) => groups.get(a)!.startX - groups.get(b)!.startX)
+      .forEach((key, i) => laneIndexByGroup.set(key, i % BUS_LANES))
+  })
 
-    edges.push({
-      id: `pc-${parents.join('-')}-${child.id}`,
-      type: 'parent-child',
-      path: `M ${startX} ${startY} L ${startX} ${midY} L ${endX} ${midY} L ${endX} ${endY}`,
+  groups.forEach((group, key) => {
+    const lane = laneIndexByGroup.get(key) ?? 0
+    const laneFraction = 0.3 + (0.4 * lane) / Math.max(BUS_LANES - 1, 1)
+    group.children.forEach(({ child, parents }) => {
+      const childPos = positions.get(child.id)!
+      const endX = childPos.x + NODE_WIDTH / 2
+      const endY = childPos.y
+      const midY = group.startY + (endY - group.startY) * laneFraction
+
+      edges.push({
+        id: `pc-${parents.join('-')}-${child.id}`,
+        type: 'parent-child',
+        path: `M ${group.startX} ${group.startY} L ${group.startX} ${midY} L ${endX} ${midY} L ${endX} ${endY}`,
+      })
     })
   })
 
-  return { nodes, edges: addCrossingGaps(edges), width, height }
+  return { nodes, edges: addCrossingJumps(edges), width, height }
 }
 
 // 無関係な線同士がただ交差しているだけなのか、実際に繋がっているのかを見分けられるように、
-// 縦方向のセグメントが他の線（別のエッジ）の横方向のセグメントと交差する箇所に
-// 小さな隙間を入れる（横線側は繋げたままにし、縦線が下を通っているように見せる）。
+// 縦方向のセグメントが他の線（別のエッジ）の横方向のセグメントと交差する箇所で、
+// 小さな円弧を描いて「ジャンプ」させる（横線側はまっすぐ繋げたままにし、
+// 縦線がその上を飛び越えているように見せる）。単に隙間を空けるだけだと、
+// 線がそこで途切れているのか繋がっているのか紛らわしいため、
+// 明確に「よけている」形にする。
 // 端点同士が触れているだけの本当の接続点は、セグメント内部での交差ではないため対象外。
-const CROSSING_GAP = 10
+const CROSSING_HOP_RADIUS = 7
 
-function addCrossingGaps(edges: LayoutEdge[]): LayoutEdge[] {
+function addCrossingJumps(edges: LayoutEdge[]): LayoutEdge[] {
   type Point = { x: number; y: number }
   type Segment = { edgeIndex: number; a: Point; b: Point }
 
@@ -426,8 +466,8 @@ function addCrossingGaps(edges: LayoutEdge[]): LayoutEdge[] {
   const verticals = allSegments.filter((s) => s.a.x === s.b.x)
   const horizontals = allSegments.filter((s) => s.a.y === s.b.y)
 
-  // segmentKey -> このセグメント上で隙間を入れるべき交差点のY座標一覧
-  const gapsBySegment = new Map<string, number[]>()
+  // segmentKey -> このセグメント上でジャンプさせるべき交差点のY座標一覧
+  const hopsBySegment = new Map<string, number[]>()
   const segmentKey = (edgeIndex: number, a: Point, b: Point) =>
     `${edgeIndex}:${a.x},${a.y}-${b.x},${b.y}`
 
@@ -445,39 +485,43 @@ function addCrossingGaps(edges: LayoutEdge[]): LayoutEdge[] {
       const crossesInterior = h.a.y >= vy1 && h.a.y <= vy2 && v.a.x > hx1 && v.a.x < hx2
       if (!crossesInterior) return
       const key = segmentKey(v.edgeIndex, v.a, v.b)
-      if (!gapsBySegment.has(key)) gapsBySegment.set(key, [])
-      gapsBySegment.get(key)!.push(h.a.y)
+      if (!hopsBySegment.has(key)) hopsBySegment.set(key, [])
+      hopsBySegment.get(key)!.push(h.a.y)
     })
   })
 
-  if (gapsBySegment.size === 0) return edges
+  if (hopsBySegment.size === 0) return edges
 
   return edges.map((edge, i) => {
     const points = edgePoints[i]
-    const parts: string[] = []
+    if (points.length === 0) return edge
+    let path = `M ${points[0].x} ${points[0].y}`
     for (let j = 0; j + 1 < points.length; j++) {
       const a = points[j]
       const b = points[j + 1]
       if (a.x === b.x && a.y === b.y) continue
-      const crossings = gapsBySegment.get(segmentKey(i, a, b))
+      const crossings = hopsBySegment.get(segmentKey(i, a, b))
       if (a.x === b.x && crossings && crossings.length > 0) {
         const dir = b.y > a.y ? 1 : -1
         const sorted = crossings.slice().sort((p, q) => (p - q) * dir)
         let cursorY = a.y
         sorted.forEach((cy) => {
-          const gapStart = cy - (CROSSING_GAP / 2) * dir
-          if ((gapStart - cursorY) * dir > 0) {
-            parts.push(`M ${a.x} ${cursorY} L ${a.x} ${gapStart}`)
+          const hopStart = cy - CROSSING_HOP_RADIUS * dir
+          const hopEnd = cy + CROSSING_HOP_RADIUS * dir
+          if ((hopStart - cursorY) * dir > 0) {
+            path += ` L ${a.x} ${hopStart}`
           }
-          cursorY = cy + (CROSSING_GAP / 2) * dir
+          // 半円を描いて右側へよける（＝下の横線の上を飛び越える）
+          path += ` A ${CROSSING_HOP_RADIUS} ${CROSSING_HOP_RADIUS} 0 0 1 ${a.x} ${hopEnd}`
+          cursorY = hopEnd
         })
         if ((b.y - cursorY) * dir > 0) {
-          parts.push(`M ${a.x} ${cursorY} L ${b.x} ${b.y}`)
+          path += ` L ${a.x} ${b.y}`
         }
       } else {
-        parts.push(`M ${a.x} ${a.y} L ${b.x} ${b.y}`)
+        path += ` L ${b.x} ${b.y}`
       }
     }
-    return { ...edge, path: parts.join(' ') }
+    return { ...edge, path }
   })
 }
