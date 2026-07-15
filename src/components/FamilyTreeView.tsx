@@ -74,7 +74,8 @@ export default function FamilyTreeView({
 }: FamilyTreeViewProps) {
   const [scale, setScale] = useState(1)
   const [vertical, setVertical] = useState(true)
-  const [exporting, setExporting] = useState(false)
+  const [copying, setCopying] = useState(false)
+  const [copied, setCopied] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
   const svgRef = useRef<SVGSVGElement>(null)
   const hasAutoFitRef = useRef(false)
@@ -111,53 +112,63 @@ export default function FamilyTreeView({
     }
   }, [svgWidth])
 
-  // 家系図全体をPNG画像として書き出す。画面のズームやスクロール位置に関わらず、
-  // SVGの実寸（viewBox基準）で高解像度（2倍）に描画することで、印刷やLINE共有にも
-  // 耐えられる画質にする。写真はすでにbase64のdata URLで埋め込まれているため、
-  // canvasへの描画がクロスオリジンで汚染される心配はない。
-  const handleExportPng = async () => {
+  // 家系図全体をPNG画像としてクリップボードにコピーする。画面のズームやスクロール
+  // 位置に関わらず、SVGの実寸（viewBox基準）で高解像度（2倍）に描画することで、
+  // 貼り付け先で印刷やLINE共有にも耐えられる画質にする。写真はすでにbase64の
+  // data URLで埋め込まれているため、canvasへの描画がクロスオリジンで汚染される
+  // 心配はない。
+  //
+  // 画像の生成（SVGの読み込み・canvas描画）は非同期のため、生成し終わってから
+  // clipboard.write を呼ぶと、クリックのユーザー操作から時間が経ちすぎて
+  // ブラウザに書き込みを拒否されることがある。そのため、生成中のPromiseを
+  // ClipboardItem に渡す形で clipboard.write 自体はクリック直後（同期的）に
+  // 呼び出し、ユーザー操作の有効期限内に書き込みを開始させる。
+  const buildTreePngBlob = async (): Promise<Blob> => {
     const svgEl = svgRef.current
-    if (!svgEl || exporting) return
-    setExporting(true)
-    try {
-      const svgString = new XMLSerializer().serializeToString(svgEl)
-      const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' })
-      const svgUrl = URL.createObjectURL(svgBlob)
+    if (!svgEl) throw new Error('家系図が見つかりません')
 
-      const image = await new Promise<HTMLImageElement>((resolve, reject) => {
-        const img = new Image()
-        img.onload = () => resolve(img)
-        img.onerror = reject
-        img.src = svgUrl
+    const svgString = new XMLSerializer().serializeToString(svgEl)
+    const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' })
+    const svgUrl = URL.createObjectURL(svgBlob)
+
+    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const img = new Image()
+      img.onload = () => resolve(img)
+      img.onerror = reject
+      img.src = svgUrl
+    })
+
+    const exportScale = 2
+    const canvas = document.createElement('canvas')
+    canvas.width = svgWidth * exportScale
+    canvas.height = svgHeight * exportScale
+    const ctx = canvas.getContext('2d')
+    if (!ctx) throw new Error('このブラウザは画像のコピーに対応していません')
+
+    ctx.fillStyle = '#ffffff'
+    ctx.fillRect(0, 0, canvas.width, canvas.height)
+    ctx.drawImage(image, 0, 0, canvas.width, canvas.height)
+    URL.revokeObjectURL(svgUrl)
+
+    const pngBlob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'))
+    if (!pngBlob) throw new Error('画像の生成に失敗しました')
+    return pngBlob
+  }
+
+  const handleCopyImage = () => {
+    if (!svgRef.current || copying) return
+    setCopying(true)
+    navigator.clipboard
+      .write([new ClipboardItem({ 'image/png': buildTreePngBlob() })])
+      .then(() => {
+        setCopied(true)
+        setTimeout(() => setCopied(false), 2000)
       })
-
-      const exportScale = 2
-      const canvas = document.createElement('canvas')
-      canvas.width = svgWidth * exportScale
-      canvas.height = svgHeight * exportScale
-      const ctx = canvas.getContext('2d')
-      if (!ctx) throw new Error('このブラウザは画像の書き出しに対応していません')
-
-      ctx.fillStyle = '#ffffff'
-      ctx.fillRect(0, 0, canvas.width, canvas.height)
-      ctx.drawImage(image, 0, 0, canvas.width, canvas.height)
-      URL.revokeObjectURL(svgUrl)
-
-      const pngBlob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'))
-      if (!pngBlob) throw new Error('画像の生成に失敗しました')
-
-      const downloadUrl = URL.createObjectURL(pngBlob)
-      const link = document.createElement('a')
-      link.href = downloadUrl
-      link.download = '家系図.png'
-      link.click()
-      URL.revokeObjectURL(downloadUrl)
-    } catch (err) {
-      console.error(err)
-      alert('画像の書き出しに失敗しました')
-    } finally {
-      setExporting(false)
-    }
+      .catch((err) => {
+        console.error(err)
+        alert('画像のコピーに失敗しました')
+      })
+      .finally(() => setCopying(false))
   }
 
   if (members.length === 0) {
@@ -207,12 +218,12 @@ export default function FamilyTreeView({
         </button>
 
         <button
-          onClick={handleExportPng}
-          disabled={exporting}
+          onClick={handleCopyImage}
+          disabled={copying}
           className="min-h-[44px] md:min-h-[32px] px-3 inline-flex items-center gap-1.5 text-sm text-gray-600 bg-white hover:bg-gray-100 rounded-full shadow-sm border border-gray-200 transition disabled:opacity-50"
         >
-          <span aria-hidden>🖼️</span>
-          {exporting ? '書き出し中...' : '画像として保存'}
+          <span aria-hidden>{copied ? '✅' : '📋'}</span>
+          {copying ? 'コピー中...' : copied ? 'コピーしました' : '画像をコピー'}
         </button>
 
         {/* Legend */}
