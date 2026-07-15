@@ -74,7 +74,9 @@ export default function FamilyTreeView({
 }: FamilyTreeViewProps) {
   const [scale, setScale] = useState(1)
   const [vertical, setVertical] = useState(true)
+  const [exporting, setExporting] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
+  const svgRef = useRef<SVGSVGElement>(null)
   const hasAutoFitRef = useRef(false)
 
   const layout = useMemo(
@@ -108,6 +110,55 @@ export default function FamilyTreeView({
       setScale(1)
     }
   }, [svgWidth])
+
+  // 家系図全体をPNG画像として書き出す。画面のズームやスクロール位置に関わらず、
+  // SVGの実寸（viewBox基準）で高解像度（2倍）に描画することで、印刷やLINE共有にも
+  // 耐えられる画質にする。写真はすでにbase64のdata URLで埋め込まれているため、
+  // canvasへの描画がクロスオリジンで汚染される心配はない。
+  const handleExportPng = async () => {
+    const svgEl = svgRef.current
+    if (!svgEl || exporting) return
+    setExporting(true)
+    try {
+      const svgString = new XMLSerializer().serializeToString(svgEl)
+      const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' })
+      const svgUrl = URL.createObjectURL(svgBlob)
+
+      const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const img = new Image()
+        img.onload = () => resolve(img)
+        img.onerror = reject
+        img.src = svgUrl
+      })
+
+      const exportScale = 2
+      const canvas = document.createElement('canvas')
+      canvas.width = svgWidth * exportScale
+      canvas.height = svgHeight * exportScale
+      const ctx = canvas.getContext('2d')
+      if (!ctx) throw new Error('このブラウザは画像の書き出しに対応していません')
+
+      ctx.fillStyle = '#ffffff'
+      ctx.fillRect(0, 0, canvas.width, canvas.height)
+      ctx.drawImage(image, 0, 0, canvas.width, canvas.height)
+      URL.revokeObjectURL(svgUrl)
+
+      const pngBlob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'))
+      if (!pngBlob) throw new Error('画像の生成に失敗しました')
+
+      const downloadUrl = URL.createObjectURL(pngBlob)
+      const link = document.createElement('a')
+      link.href = downloadUrl
+      link.download = '家系図.png'
+      link.click()
+      URL.revokeObjectURL(downloadUrl)
+    } catch (err) {
+      console.error(err)
+      alert('画像の書き出しに失敗しました')
+    } finally {
+      setExporting(false)
+    }
+  }
 
   if (members.length === 0) {
     return (
@@ -155,6 +206,15 @@ export default function FamilyTreeView({
           {vertical ? '横表示' : '縦表示'}
         </button>
 
+        <button
+          onClick={handleExportPng}
+          disabled={exporting}
+          className="min-h-[44px] md:min-h-[32px] px-3 inline-flex items-center gap-1.5 text-sm text-gray-600 bg-white hover:bg-gray-100 rounded-full shadow-sm border border-gray-200 transition disabled:opacity-50"
+        >
+          <span aria-hidden>🖼️</span>
+          {exporting ? '書き出し中...' : '画像として保存'}
+        </button>
+
         {/* Legend */}
         <div className="flex flex-wrap gap-2 text-xs md:text-sm text-gray-600">
           <div className="flex items-center gap-1.5 bg-white rounded-full border border-gray-200 px-2.5 py-1">
@@ -187,6 +247,7 @@ export default function FamilyTreeView({
         style={{ maxHeight: '70vh' }}
       >
         <svg
+          ref={svgRef}
           width={svgWidth * scale}
           height={svgHeight * scale}
           viewBox={`0 0 ${svgWidth} ${svgHeight}`}
