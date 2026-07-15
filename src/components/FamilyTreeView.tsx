@@ -34,12 +34,46 @@ function formatAge(member: FamilyMember) {
   return member.deathDate ? `享年${age}${label}` : `${age}${label}歳`
 }
 
+// 縦表示（世代を左右ではなく上下ではなく左右にする＝スマホ向け）にする際、
+// レイアウト計算自体（世代=Y、兄弟順=X）はそのままに、描画時だけ座標を
+// x⇔yで入れ替えて90度回転相当の見た目にする。円弧（線の飛び越え）は
+// 座標を入れ替えると鏡映になるため、sweepフラグを反転して向きを保つ。
+function transposePath(path: string): string {
+  const tokens = path.match(/[MLA]|-?\d+(?:\.\d+)?/g) ?? []
+  const out: string[] = []
+  let i = 0
+  while (i < tokens.length) {
+    const cmd = tokens[i]
+    if (cmd === 'M' || cmd === 'L') {
+      const x = tokens[i + 1]
+      const y = tokens[i + 2]
+      out.push(cmd, y, x)
+      i += 3
+    } else if (cmd === 'A') {
+      const rx = tokens[i + 1]
+      const ry = tokens[i + 2]
+      const rot = tokens[i + 3]
+      const largeArc = tokens[i + 4]
+      const sweep = tokens[i + 5]
+      const x = tokens[i + 6]
+      const y = tokens[i + 7]
+      out.push(cmd, rx, ry, rot, largeArc, sweep === '1' ? '0' : '1', y, x)
+      i += 8
+    } else {
+      out.push(cmd)
+      i += 1
+    }
+  }
+  return out.join(' ')
+}
+
 export default function FamilyTreeView({
   members,
   marriages,
   parentChildRelations,
 }: FamilyTreeViewProps) {
   const [scale, setScale] = useState(1)
+  const [vertical, setVertical] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
   const hasAutoFitRef = useRef(false)
 
@@ -49,13 +83,19 @@ export default function FamilyTreeView({
   )
 
   const padding = 20
-  const svgWidth = layout.width + padding * 2
-  const svgHeight = layout.height + padding * 2
+  // 縦表示では世代方向（元のY）を画面の横幅、兄弟の並び（元のX）を画面の高さにする
+  const svgWidth = (vertical ? layout.height : layout.width) + padding * 2
+  const svgHeight = (vertical ? layout.width : layout.height) + padding * 2
 
   // スマホなど画面が狭い場合、初期表示で家系図が極端にはみ出さないように
-  // 一度だけ自動でスケールを合わせる（ユーザーが手動でズームした後は上書きしない）。
+  // 自動でスケールを合わせる（ユーザーが手動でズームした後は上書きしない）。
+  // 縦横を切り替えたときは、はみ出し具合が変わるため合わせ直す。
   // 文字が読めなくなるほどは縮小しないよう下限を高めに設定し、
   // はみ出す分はスクロールで見る前提にする。
+  useEffect(() => {
+    hasAutoFitRef.current = false
+  }, [vertical])
+
   useEffect(() => {
     if (hasAutoFitRef.current || svgWidth === 0) return
     const containerWidth = containerRef.current?.clientWidth
@@ -64,6 +104,8 @@ export default function FamilyTreeView({
     const fitScale = Math.min(1, (containerWidth - 8) / svgWidth)
     if (fitScale < 0.95) {
       setScale(Math.max(0.75, +fitScale.toFixed(2)))
+    } else {
+      setScale(1)
     }
   }, [svgWidth])
 
@@ -104,6 +146,14 @@ export default function FamilyTreeView({
             リセット
           </button>
         </div>
+
+        <button
+          onClick={() => setVertical((v) => !v)}
+          className="min-h-[44px] md:min-h-[32px] px-3 inline-flex items-center gap-1.5 text-sm text-gray-600 bg-white hover:bg-gray-100 rounded-full shadow-sm border border-gray-200 transition"
+        >
+          <span aria-hidden>{vertical ? '↔️' : '↕️'}</span>
+          {vertical ? '横表示' : '縦表示'}
+        </button>
 
         {/* Legend */}
         <div className="flex flex-wrap gap-2 text-xs md:text-sm text-gray-600">
@@ -152,7 +202,7 @@ export default function FamilyTreeView({
             {layout.edges.map((edge) => (
               <path
                 key={edge.id}
-                d={edge.path}
+                d={vertical ? transposePath(edge.path) : edge.path}
                 fill="none"
                 stroke={edge.type === 'marriage' ? '#9ca3af' : '#c7cdd6'}
                 strokeWidth={edge.type === 'marriage' ? 2.25 : 2}
@@ -169,11 +219,13 @@ export default function FamilyTreeView({
               const years =
                 birthYear || deathYear ? `${birthYear || '?'} - ${deathYear || ''}` : ''
               const age = formatAge(node.member)
+              const nodeX = vertical ? node.y : node.x
+              const nodeY = vertical ? node.x : node.y
 
               return (
                 <g
                   key={node.member.id}
-                  transform={`translate(${node.x}, ${node.y})`}
+                  transform={`translate(${nodeX}, ${nodeY})`}
                   filter="url(#node-shadow)"
                 >
                   <rect
