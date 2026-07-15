@@ -385,7 +385,14 @@ export function computeFamilyTreeLayout(
       const parentPositions = parents.map((p) => positions.get(p)!)
       const startX =
         parentPositions.reduce((s, p) => s + p.x, 0) / parentPositions.length + NODE_WIDTH / 2
-      const startY = Math.max(...parentPositions.map((p) => p.y)) + NODE_HEIGHT
+      // 両親が夫婦の場合、子への線の起点をノード下端ではなく配偶者線と同じ高さ
+      // （ノードの縦中央）にする。起点のX座標は2人の間の隙間（ノードの外）なので、
+      // 配偶者線から子への線がそのまま繋がって見える。
+      const isMarriedPair =
+        parents.length === 2 && (spouseOf.get(parents[0]) || []).includes(parents[1])
+      const startY =
+        Math.max(...parentPositions.map((p) => p.y)) +
+        (isMarriedPair ? NODE_HEIGHT / 2 : NODE_HEIGHT)
       groups.set(key, { startX, startY, children: [] })
     }
     groups.get(key)!.children.push({ child, parents })
@@ -441,7 +448,7 @@ const CROSSING_HOP_RADIUS = 7
 
 function addCrossingJumps(edges: LayoutEdge[]): LayoutEdge[] {
   type Point = { x: number; y: number }
-  type Segment = { edgeIndex: number; a: Point; b: Point }
+  type Segment = { edgeIndex: number; segmentIndex: number; a: Point; b: Point }
 
   function parsePoints(path: string): Point[] {
     const nums = (path.match(/-?\d+(?:\.\d+)?/g) ?? []).map(Number)
@@ -456,14 +463,17 @@ function addCrossingJumps(edges: LayoutEdge[]): LayoutEdge[] {
       const a = points[i]
       const b = points[i + 1]
       if (a.x === b.x && a.y === b.y) continue
-      segments.push({ edgeIndex, a, b })
+      segments.push({ edgeIndex, segmentIndex: segments.length, a, b })
     }
     return segments
   }
 
   const edgePoints = edges.map((e) => parsePoints(e.path))
   const allSegments = edgePoints.flatMap((points, i) => pointsToSegments(i, points))
-  const verticals = allSegments.filter((s) => s.a.x === s.b.x)
+  // 親から伸びる最初の縦セグメントは、夫婦の場合は配偶者線の高さから始まる
+  // 正規の接続点であり、たまたま高さが一致した「無関係な交差」ではないため、
+  // ジャンプの対象から除外する（他のセグメントは従来どおり交差判定する）。
+  const verticals = allSegments.filter((s) => s.a.x === s.b.x && s.segmentIndex > 0)
   const horizontals = allSegments.filter((s) => s.a.y === s.b.y)
 
   // segmentKey -> このセグメント上でジャンプさせるべき交差点のY座標一覧

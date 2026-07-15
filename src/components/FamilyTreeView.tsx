@@ -73,7 +73,7 @@ export default function FamilyTreeView({
   parentChildRelations,
 }: FamilyTreeViewProps) {
   const [scale, setScale] = useState(1)
-  const [vertical, setVertical] = useState(false)
+  const [vertical, setVertical] = useState(true)
   const containerRef = useRef<HTMLDivElement>(null)
   const hasAutoFitRef = useRef(false)
 
