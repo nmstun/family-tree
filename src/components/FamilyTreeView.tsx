@@ -318,6 +318,13 @@ export default function FamilyTreeView({
               const age = formatAge(node.member)
               const nodeX = vertical ? node.y : node.x
               const nodeY = vertical ? node.x : node.y
+              // 線の座標は元のレイアウト（横=NODE_WIDTH、縦=NODE_HEIGHT）を
+              // そのままx⇔y入れ替えて計算しているため、カード自体の見た目上の
+              // 幅・高さも縦表示では入れ替えないと、線がカードの本来の端より
+              // 手前や奥で止まって見えてしまう（配偶者線がカードに届かない等）。
+              const boxWidth = vertical ? NODE_HEIGHT : NODE_WIDTH
+              const boxHeight = vertical ? NODE_WIDTH : NODE_HEIGHT
+              const centerX = boxWidth / 2
 
               return (
                 <g
@@ -326,8 +333,8 @@ export default function FamilyTreeView({
                   filter="url(#node-shadow)"
                 >
                   <rect
-                    width={NODE_WIDTH}
-                    height={NODE_HEIGHT}
+                    width={boxWidth}
+                    height={boxHeight}
                     rx={14}
                     fill={colors.bg}
                     stroke={colors.border}
@@ -336,11 +343,11 @@ export default function FamilyTreeView({
                   {node.member.photo ? (
                     <>
                       <clipPath id={`clip-${node.member.id}`}>
-                        <circle cx={NODE_WIDTH / 2} cy={28} r={20} />
+                        <circle cx={centerX} cy={28} r={20} />
                       </clipPath>
                       <image
                         href={node.member.photo}
-                        x={NODE_WIDTH / 2 - 20}
+                        x={centerX - 20}
                         y={8}
                         width={40}
                         height={40}
@@ -350,7 +357,7 @@ export default function FamilyTreeView({
                     </>
                   ) : (
                     <circle
-                      cx={NODE_WIDTH / 2}
+                      cx={centerX}
                       cy={28}
                       r={20}
                       fill="white"
@@ -359,7 +366,7 @@ export default function FamilyTreeView({
                     />
                   )}
                   <text
-                    x={NODE_WIDTH / 2}
+                    x={centerX}
                     y={66}
                     textAnchor="middle"
                     fontSize={15}
@@ -369,12 +376,12 @@ export default function FamilyTreeView({
                     {node.member.lastName} {node.member.firstName}
                   </text>
                   {years && (
-                    <text x={NODE_WIDTH / 2} y={81} textAnchor="middle" fontSize={12} fill="#6b7280">
+                    <text x={centerX} y={81} textAnchor="middle" fontSize={12} fill="#6b7280">
                       {years}
                     </text>
                   )}
                   {age && (
-                    <text x={NODE_WIDTH / 2} y={96} textAnchor="middle" fontSize={12} fill="#6b7280">
+                    <text x={centerX} y={96} textAnchor="middle" fontSize={12} fill="#6b7280">
                       {age}
                     </text>
                   )}
