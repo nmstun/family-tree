@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { FamilyMember, Marriage, ParentChildRelation } from '@/types'
-import { computeFamilyTreeLayout, NODE_WIDTH, NODE_HEIGHT } from '@/utils/treeLayout'
+import { computeFamilyTreeLayout, NODE_WIDTH, NODE_HEIGHT, V_GAP } from '@/utils/treeLayout'
 import { calculateAge } from '@/utils/age'
 
 interface FamilyTreeViewProps {
@@ -89,6 +89,15 @@ export default function FamilyTreeView({
   // 縦表示では世代方向（元のY）を画面の横幅、兄弟の並び（元のX）を画面の高さにする
   const svgWidth = (vertical ? layout.height : layout.width) + padding * 2
   const svgHeight = (vertical ? layout.width : layout.height) + padding * 2
+
+  // 世代の境界を帯状の背景色で示す。線が座標変換（縦横切り替え）の都合で
+  // たまたま無関係なノードの近くを通ってしまっても、背景の帯を見れば
+  // どのノードがどの世代に属すかが一目で分かり、誤って繋がっているように
+  // 見えるのを防げる。帯の座標は世代軸（縦表示でも横表示でも常にlayout.height側）
+  // を基準に計算し、描画時に必要な軸へ割り当てる。
+  const rowSize = NODE_HEIGHT + V_GAP
+  const generationCount =
+    layout.nodes.length > 0 ? Math.max(...layout.nodes.map((n) => n.generation)) + 1 : 0
 
   // スマホなど画面が狭い場合、初期表示で家系図が極端にはみ出さないように
   // 自動でスケールを合わせる（ユーザーが手動でズームした後は上書きしない）。
@@ -270,6 +279,22 @@ export default function FamilyTreeView({
             </filter>
           </defs>
           <g transform={`translate(${padding}, ${padding})`}>
+            {/* Generation bands (drawn first, under everything) */}
+            {Array.from({ length: generationCount }, (_, g) => {
+              if (g % 2 === 0) return null
+              const bandStart = g * rowSize
+              return (
+                <rect
+                  key={`band-${g}`}
+                  x={vertical ? bandStart : 0}
+                  y={vertical ? 0 : bandStart}
+                  width={vertical ? rowSize : layout.width}
+                  height={vertical ? layout.width : rowSize}
+                  fill="#f1f5f9"
+                />
+              )
+            })}
+
             {/* Edges (drawn first, under the nodes) */}
             {layout.edges.map((edge) => (
               <path
