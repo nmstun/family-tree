@@ -187,17 +187,6 @@ export function computeFamilyTreeLayout(
     byGen.set(g, ids)
   })
 
-  // 各世代を単純に横幅基準で中央揃えするだけだと、子が少ない/多い枝が混在したときに
-  // 実際の親子の真上・真下からずれてしまい、線が長く伸びて親子が離れて見えてしまう。
-  // そのため、いちばん下の世代（子がいない末端）から上の世代に向かって、
-  // 「親は自分の実の子供たちの中心の真上に置く」方式で座標を決める。
-  const childrenOf = new Map<string, string[]>()
-  relations.forEach((r) => {
-    if (!memberMap.has(r.parentId) || !memberMap.has(r.childId)) return
-    if (!childrenOf.has(r.parentId)) childrenOf.set(r.parentId, [])
-    childrenOf.get(r.parentId)!.push(r.childId)
-  })
-
   // 世代内で並んでいる順序（byGen）はすでに配偶者が隣り合うようクラスタ化されているため、
   // 隣接する2人が配偶者ならまとめて1クラスタとして扱う
   function toClusters(orderedIds: string[]): string[][] {
@@ -221,127 +210,148 @@ export function computeFamilyTreeLayout(
 
   const clusterWidth = (count: number) => count * NODE_WIDTH + (count - 1) * H_GAP
 
-  // --- Step 5: assign coordinates（末端の世代から上に向かって配置） ---
+  // --- Step 5: レイアウトの木構造を組み立て、幅計算→配置の2段階で座標を求める ---
+  // 各人物を「クラスタ」（本人単独、または配偶者とのペア）にまとめ、クラスタ同士の
+  // 親子関係を木構造として扱う。まず子孫の実際のサイズ（幅）をボトムアップに
+  // 計算してから、その幅に基づいてトップダウンに配置することで、
+  // 「一部の子孫グループだけ極端に大きい」場合でも、後から重なりを直したり
+  // 親を再調整したりする繰り返し処理なしに、1回の計算で
+  // 重なりのない・親が実子の中心に来る配置に収束する
+  // （以前は「重なったら押し出す」処理を後から繰り返していたが、
+  // 押し出しにつられて子孫の重心が変わっても親の位置は再調整されず、
+  // 兄弟の親同士の間に不自然な余白ができる不具合があった）。
+  //
+  // 同じ子クラスタが両方の配偶者の実の親から辿れる場合（他の家系から嫁いできた
+  // 配偶者など）は、どちらか一方だけを配置計算上の「主たる親」とする
+  // （もう一方の親からの線は、実際に配置された位置まで伸ばして描画される）。
   const positions = new Map<string, { x: number; y: number }>()
   const nodeByMemberId = new Map<string, LayoutNode>()
   const clusterOf = new Map<string, string[]>()
   const nodes: LayoutNode[] = []
 
-  // 兄弟（無関係な隣のクラスタ）との重なりを避けるために親が右にずれた場合、
-  // 位置決め済みの子孫（下の世代）を置き去りにすると、親子の線が斜めに
-  // ズレて「子が親の真下に来ていない」ように見えてしまう。
-  // ずれた分だけ子孫全員も一緒に横へずらし、親子の位置関係を保つ。
-  // 子だけでなく、その配偶者（クラスタ全体）も一緒にずらさないと
-  // 夫婦の並びが崩れてしまうため、クラスタ単位でずらす。
-  function shiftDescendants(rootIds: string[], delta: number) {
-    if (delta === 0) return
-    const queue = [...rootIds]
-    const seen = new Set<string>()
-    while (queue.length > 0) {
-      const id = queue.shift()!
-      ;(childrenOf.get(id) || []).forEach((childId) => {
-        if (seen.has(childId)) return
-        const cluster = clusterOf.get(childId) || [childId]
-        cluster.forEach((memberId) => {
-          if (seen.has(memberId)) return
-          seen.add(memberId)
-          const pos = positions.get(memberId)
-          const node = nodeByMemberId.get(memberId)
-          if (pos) pos.x += delta
-          if (node) node.x += delta
-          queue.push(memberId)
-        })
-      })
-    }
-  }
-
-  for (let idx = generations.length - 1; idx >= 0; idx--) {
-    const g = generations[idx]
+  const clusterOrderIndex = new Map<string, number>()
+  generations.forEach((g) => {
     const clusters = toClusters(byGen.get(g)!)
-    const y = g * (NODE_HEIGHT + V_GAP) + V_GAP / 2
-
-    let cursorX = H_GAP
-    clusters.forEach((cluster) => {
-      const cw = clusterWidth(cluster.length)
-
-      // このクラスタ（本人、または配偶者どちらの子も含む）の実子の中心座標を求める
-      const childCenters: number[] = []
+    clusters.forEach((cluster, i) => {
       cluster.forEach((memberId) => {
-        ;(childrenOf.get(memberId) || []).forEach((childId) => {
-          const childPos = positions.get(childId)
-          if (childPos) childCenters.push(childPos.x + NODE_WIDTH / 2)
-        })
-      })
-      const idealCenterX =
-        childCenters.length > 0
-          ? childCenters.reduce((s, x) => s + x, 0) / childCenters.length
-          : null
-
-      // 兄弟同士が重ならないよう、cursorX より左には置かない
-      const desiredLeft = idealCenterX !== null ? idealCenterX - cw / 2 : cursorX
-      const left = Math.max(desiredLeft, cursorX)
-
-      cluster.forEach((memberId, i) => {
-        const x = left + i * (NODE_WIDTH + H_GAP)
-        const node: LayoutNode = { member: memberMap.get(memberId)!, x, y, generation: g }
-        positions.set(memberId, { x, y })
-        nodeByMemberId.set(memberId, node)
         clusterOf.set(memberId, cluster)
-        nodes.push(node)
+        clusterOrderIndex.set(memberId, i)
       })
-
-      shiftDescendants(cluster, left - desiredLeft)
-
-      cursorX = left + cw + H_GAP
     })
-  }
+  })
 
-  // shiftDescendants は「親子の位置合わせ」のために子孫をずらすが、その際に
-  // 同じ行にいる無関係な兄弟クラスタと重なってしまうことがある
-  // （兄弟クラスタ側は自分がずれたことを知らないため）。
-  // 全世代を上から下に向かって走査し、隣のクラスタと重なっていれば右に押し出し、
-  // その分だけさらに子孫も連動してずらす、というのを変化がなくなるまで繰り返す。
-  function resolveOverlaps() {
-    for (let pass = 0; pass < 20; pass++) {
-      let changed = false
-      generations.forEach((g) => {
-        const rowClusters = toClusters(byGen.get(g)!)
-        let prevRight = -Infinity
-        rowClusters.forEach((cluster) => {
-          const leftX = Math.min(...cluster.map((m) => positions.get(m)!.x))
-          if (leftX < prevRight + H_GAP) {
-            const push = prevRight + H_GAP - leftX
-            shiftClusterAndDescendants(cluster, push)
-            changed = true
+  // 各クラスタの「主たる親クラスタ」を決める（無ければ配置上のルート）。
+  // クラスタは配列の参照そのものを識別子として使う（Map/Setのキーは参照一致）。
+  const primaryChildrenOf = new Map<string[], string[][]>()
+  const roots: string[][] = []
+  {
+    const visited = new Set<string[]>()
+    members.forEach((child) => {
+      const childCluster = clusterOf.get(child.id)
+      if (!childCluster || visited.has(childCluster)) return
+      visited.add(childCluster)
+
+      const candidateParents: string[][] = []
+      const seenParents = new Set<string[]>()
+      childCluster.forEach((memberId) => {
+        ;(parentsOf.get(memberId) || []).forEach((parentId) => {
+          const parentCluster = clusterOf.get(parentId)
+          if (parentCluster && parentCluster !== childCluster && !seenParents.has(parentCluster)) {
+            seenParents.add(parentCluster)
+            candidateParents.push(parentCluster)
           }
-          const rightX = Math.max(...cluster.map((m) => positions.get(m)!.x + NODE_WIDTH))
-          prevRight = rightX
         })
       })
-      if (!changed) break
-    }
+
+      if (candidateParents.length === 0) {
+        roots.push(childCluster)
+        return
+      }
+      const primary = candidateParents[0]
+      if (!primaryChildrenOf.has(primary)) primaryChildrenOf.set(primary, [])
+      primaryChildrenOf.get(primary)!.push(childCluster)
+    })
+
+    primaryChildrenOf.forEach((children) => {
+      children.sort(
+        (a, b) => (clusterOrderIndex.get(a[0]) ?? 0) - (clusterOrderIndex.get(b[0]) ?? 0)
+      )
+    })
+    roots.sort((a, b) => {
+      const ga = generation.get(a[0])!
+      const gb = generation.get(b[0])!
+      if (ga !== gb) return ga - gb
+      return (clusterOrderIndex.get(a[0]) ?? 0) - (clusterOrderIndex.get(b[0]) ?? 0)
+    })
   }
 
-  function shiftClusterAndDescendants(cluster: string[], delta: number) {
-    if (delta <= 0) return
-    cluster.forEach((memberId) => {
-      const pos = positions.get(memberId)
-      const node = nodeByMemberId.get(memberId)
-      if (pos) pos.x += delta
-      if (node) node.x += delta
-    })
-    const seenChildren = new Set<string>()
-    cluster.forEach((memberId) => {
-      ;(childrenOf.get(memberId) || []).forEach((childId) => {
-        if (seenChildren.has(childId)) return
-        const childCluster = clusterOf.get(childId) || [childId]
-        childCluster.forEach((m) => seenChildren.add(m))
-        shiftClusterAndDescendants(childCluster, delta)
+  const clusterWidthOf = (cluster: string[]) => clusterWidth(cluster.length)
+
+  // ボトムアップ：各クラスタの子孫全体が必要とする幅を計算する
+  // （循環はあり得ないはずだが、万一のデータ不整合で無限再帰しないよう防御する）
+  const widthMemo = new Map<string[], number>()
+  const computingWidth = new Set<string[]>()
+  function computeRequiredWidth(cluster: string[]): number {
+    const memo = widthMemo.get(cluster)
+    if (memo !== undefined) return memo
+    const cw = clusterWidthOf(cluster)
+    if (computingWidth.has(cluster)) return cw
+    computingWidth.add(cluster)
+    const children = primaryChildrenOf.get(cluster) || []
+    const width =
+      children.length === 0
+        ? cw
+        : Math.max(
+            cw,
+            children.reduce((s, c) => s + computeRequiredWidth(c), 0) + H_GAP * (children.length - 1)
+          )
+    computingWidth.delete(cluster)
+    widthMemo.set(cluster, width)
+    return width
+  }
+
+  // トップダウン：親に割り当てられた枠（slotLeft〜slotLeft+slotWidth）の中で、
+  // 子クラスタをそれぞれの必要幅ぶんの枠に配置し、自分は実子の中心に置く
+  const positioning = new Set<string[]>()
+  function assignPositions(cluster: string[], slotLeft: number, slotWidth: number) {
+    if (positioning.has(cluster)) return
+    positioning.add(cluster)
+    const g = generation.get(cluster[0])!
+    const y = g * (NODE_HEIGHT + V_GAP) + V_GAP / 2
+    const cw = clusterWidthOf(cluster)
+    const children = primaryChildrenOf.get(cluster) || []
+
+    let left: number
+    if (children.length === 0) {
+      left = slotLeft + (slotWidth - cw) / 2
+    } else {
+      const childWidths = children.map((c) => computeRequiredWidth(c))
+      const childrenTotal = childWidths.reduce((s, w) => s + w, 0) + H_GAP * (children.length - 1)
+      let cursor = slotLeft + (slotWidth - childrenTotal) / 2
+      children.forEach((childCluster, i) => {
+        assignPositions(childCluster, cursor, childWidths[i])
+        cursor += childWidths[i] + H_GAP
       })
+      const centers = children.map((c) => positions.get(c[0])!.x + clusterWidthOf(c) / 2)
+      const idealCenter = centers.reduce((s, x) => s + x, 0) / centers.length
+      left = idealCenter - cw / 2
+    }
+
+    cluster.forEach((memberId, i) => {
+      const x = left + i * (NODE_WIDTH + H_GAP)
+      const node: LayoutNode = { member: memberMap.get(memberId)!, x, y, generation: g }
+      positions.set(memberId, { x, y })
+      nodeByMemberId.set(memberId, node)
+      nodes.push(node)
     })
   }
 
-  resolveOverlaps()
+  let rootCursor = H_GAP
+  roots.forEach((rootCluster) => {
+    const w = computeRequiredWidth(rootCluster)
+    assignPositions(rootCluster, rootCursor, w)
+    rootCursor += w + H_GAP
+  })
 
   nodes.sort((a, b) => a.generation - b.generation)
 
