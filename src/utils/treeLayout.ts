@@ -352,6 +352,10 @@ export function computeFamilyTreeLayout(
   // --- Step 6: build connector paths ---
   const edges: LayoutEdge[] = []
 
+  // 夫婦の「親の組み合わせキー」から、その配偶者線のエッジIDを引けるようにしておく
+  // （子への線が自分の配偶者線と交差判定されて誤ってジャンプ扱いされるのを防ぐため）。
+  const marriageEdgeIdByPairKey = new Map<string, string>()
+
   validMarriages.forEach((m) => {
     const p1 = positions.get(m.spouse1Id)
     const p2 = positions.get(m.spouse2Id)
@@ -359,8 +363,10 @@ export function computeFamilyTreeLayout(
     const y = p1.y + NODE_HEIGHT / 2
     const leftX = Math.min(p1.x, p2.x) + NODE_WIDTH
     const rightX = Math.max(p1.x, p2.x)
+    const edgeId = `marriage-${m.id}`
+    marriageEdgeIdByPairKey.set([m.spouse1Id, m.spouse2Id].sort().join(','), edgeId)
     edges.push({
-      id: `marriage-${m.id}`,
+      id: edgeId,
       type: 'marriage',
       path: `M ${leftX} ${y} L ${rightX} ${y}`,
     })
@@ -373,7 +379,13 @@ export function computeFamilyTreeLayout(
   const groupKey = (parents: string[]) => parents.slice().sort().join(',')
   const groups = new Map<
     string,
-    { startX: number; startY: number; rowBottomEdge: number; children: ChildLink[] }
+    {
+      startX: number
+      startY: number
+      rowBottomEdge: number
+      connectedMarriageEdgeId?: string
+      children: ChildLink[]
+    }
   >()
 
   const processedChildren = new Set<string>()
@@ -395,10 +407,9 @@ export function computeFamilyTreeLayout(
       // 両親が夫婦の場合、子への線の起点をノード下端ではなく配偶者線と同じ高さ
       // （ノードの縦中央）にする。起点のX座標は2人の間の隙間（ノードの外）なので、
       // 配偶者線から子への線がそのまま繋がって見える（下端までは親ノードの裏を通る）。
-      const isMarriedPair =
-        parents.length === 2 && (spouseOf.get(parents[0]) || []).includes(parents[1])
-      const startY = rowBottomEdge - (isMarriedPair ? NODE_HEIGHT / 2 : 0)
-      groups.set(key, { startX, startY, rowBottomEdge, children: [] })
+      const connectedMarriageEdgeId = marriageEdgeIdByPairKey.get(key)
+      const startY = rowBottomEdge - (connectedMarriageEdgeId ? NODE_HEIGHT / 2 : 0)
+      groups.set(key, { startX, startY, rowBottomEdge, connectedMarriageEdgeId, children: [] })
     }
     groups.get(key)!.children.push({ child, parents })
   })
@@ -422,6 +433,12 @@ export function computeFamilyTreeLayout(
       .forEach((key, i) => laneIndexByGroup.set(key, i % BUS_LANES))
   })
 
+  // 子への線のうち、自分の親の配偶者線とだけは交差判定・ジャンプの対象外にする
+  // （正規の接続点であり、無関係な交差ではないため）。他の無関係な線との交差は
+  // 通常どおり判定する（例：離れた実の親から伸びる線が、他の家族の横棒を
+  // 実際に横切る場合はきちんとジャンプさせたい）。
+  const skipJumpPairs = new Set<string>()
+
   groups.forEach((group, key) => {
     const lane = laneIndexByGroup.get(key) ?? 0
     const laneFraction = 0.3 + (0.4 * lane) / Math.max(BUS_LANES - 1, 1)
@@ -431,15 +448,19 @@ export function computeFamilyTreeLayout(
       const endY = childPos.y
       const midY = group.rowBottomEdge + (endY - group.rowBottomEdge) * laneFraction
 
+      const edgeId = `pc-${parents.join('-')}-${child.id}`
+      if (group.connectedMarriageEdgeId) {
+        skipJumpPairs.add(`${edgeId}|${group.connectedMarriageEdgeId}`)
+      }
       edges.push({
-        id: `pc-${parents.join('-')}-${child.id}`,
+        id: edgeId,
         type: 'parent-child',
         path: `M ${group.startX} ${group.startY} L ${group.startX} ${midY} L ${endX} ${midY} L ${endX} ${endY}`,
       })
     })
   })
 
-  return { nodes, edges: addCrossingJumps(edges), width, height }
+  return { nodes, edges: addCrossingJumps(edges, skipJumpPairs), width, height }
 }
 
 // 無関係な線同士がただ交差しているだけなのか、実際に繋がっているのかを見分けられるように、
@@ -451,9 +472,12 @@ export function computeFamilyTreeLayout(
 // 端点同士が触れているだけの本当の接続点は、セグメント内部での交差ではないため対象外。
 const CROSSING_HOP_RADIUS = 7
 
-function addCrossingJumps(edges: LayoutEdge[]): LayoutEdge[] {
+function addCrossingJumps(
+  edges: LayoutEdge[],
+  skipPairs: Set<string> = new Set()
+): LayoutEdge[] {
   type Point = { x: number; y: number }
-  type Segment = { edgeIndex: number; segmentIndex: number; a: Point; b: Point }
+  type Segment = { edgeIndex: number; a: Point; b: Point }
 
   function parsePoints(path: string): Point[] {
     const nums = (path.match(/-?\d+(?:\.\d+)?/g) ?? []).map(Number)
@@ -468,17 +492,14 @@ function addCrossingJumps(edges: LayoutEdge[]): LayoutEdge[] {
       const a = points[i]
       const b = points[i + 1]
       if (a.x === b.x && a.y === b.y) continue
-      segments.push({ edgeIndex, segmentIndex: segments.length, a, b })
+      segments.push({ edgeIndex, a, b })
     }
     return segments
   }
 
   const edgePoints = edges.map((e) => parsePoints(e.path))
   const allSegments = edgePoints.flatMap((points, i) => pointsToSegments(i, points))
-  // 親から伸びる最初の縦セグメントは、夫婦の場合は配偶者線の高さから始まる
-  // 正規の接続点であり、たまたま高さが一致した「無関係な交差」ではないため、
-  // ジャンプの対象から除外する（他のセグメントは従来どおり交差判定する）。
-  const verticals = allSegments.filter((s) => s.a.x === s.b.x && s.segmentIndex > 0)
+  const verticals = allSegments.filter((s) => s.a.x === s.b.x)
   const horizontals = allSegments.filter((s) => s.a.y === s.b.y)
 
   // segmentKey -> このセグメント上でジャンプさせるべき交差点のY座標一覧
@@ -491,6 +512,12 @@ function addCrossingJumps(edges: LayoutEdge[]): LayoutEdge[] {
     const vy2 = Math.max(v.a.y, v.b.y)
     horizontals.forEach((h) => {
       if (h.edgeIndex === v.edgeIndex) return
+      // 子への線と、その線が起点とする配偶者線同士の組み合わせは、
+      // 正規の接続点であり無関係な交差ではないため対象から除外する
+      // （他の無関係な線との交差は、高さが偶然一致していてもきちんと判定する）。
+      const vId = edges[v.edgeIndex].id
+      const hId = edges[h.edgeIndex].id
+      if (skipPairs.has(`${vId}|${hId}`) || skipPairs.has(`${hId}|${vId}`)) return
       const hx1 = Math.min(h.a.x, h.b.x)
       const hx2 = Math.max(h.a.x, h.b.x)
       // 同じ世代間をつなぐ親子線は必ず同じY（midY）を通るため、無関係な線同士の
