@@ -371,7 +371,10 @@ export function computeFamilyTreeLayout(
   // （＝兄弟であることが分かる）。
   type ChildLink = { child: FamilyMember; parents: string[] }
   const groupKey = (parents: string[]) => parents.slice().sort().join(',')
-  const groups = new Map<string, { startX: number; startY: number; children: ChildLink[] }>()
+  const groups = new Map<
+    string,
+    { startX: number; startY: number; rowBottomEdge: number; children: ChildLink[] }
+  >()
 
   const processedChildren = new Set<string>()
   members.forEach((child) => {
@@ -385,32 +388,34 @@ export function computeFamilyTreeLayout(
       const parentPositions = parents.map((p) => positions.get(p)!)
       const startX =
         parentPositions.reduce((s, p) => s + p.x, 0) / parentPositions.length + NODE_WIDTH / 2
+      // 世代の境界（＝親ノードの下端。世代の区切りとして常に一定）。
+      // 横棒の高さ（レーン）はこれを基準に計算し、夫婦かどうかに関わらず
+      // 必ず親ノードの下端より下（実際の世代間の隙間の中）に収まるようにする。
+      const rowBottomEdge = Math.max(...parentPositions.map((p) => p.y)) + NODE_HEIGHT
       // 両親が夫婦の場合、子への線の起点をノード下端ではなく配偶者線と同じ高さ
       // （ノードの縦中央）にする。起点のX座標は2人の間の隙間（ノードの外）なので、
-      // 配偶者線から子への線がそのまま繋がって見える。
+      // 配偶者線から子への線がそのまま繋がって見える（下端までは親ノードの裏を通る）。
       const isMarriedPair =
         parents.length === 2 && (spouseOf.get(parents[0]) || []).includes(parents[1])
-      const startY =
-        Math.max(...parentPositions.map((p) => p.y)) +
-        (isMarriedPair ? NODE_HEIGHT / 2 : NODE_HEIGHT)
-      groups.set(key, { startX, startY, children: [] })
+      const startY = rowBottomEdge - (isMarriedPair ? NODE_HEIGHT / 2 : 0)
+      groups.set(key, { startX, startY, rowBottomEdge, children: [] })
     }
     groups.get(key)!.children.push({ child, parents })
   })
 
-  // 世代の境界（同じstartY）から線が伸びる家族が複数あるとき、
+  // 世代の境界（同じrowBottomEdge）から線が伸びる家族が複数あるとき、
   // 横棒をすべて同じ高さで描くと隣の家族の横棒とつながって見えてしまい、
   // どの親子の線か分からなくなる。家族（親の組み合わせ）ごとに横棒の高さを
   // 数段に分けてずらし、それでも他の家族の線と交差する箇所は
   // addCrossingJumps でジャンプさせて「別の線を飛び越えているだけ」と分かるようにする。
   const BUS_LANES = 3
   const laneIndexByGroup = new Map<string, number>()
-  const groupsByStartY = new Map<number, string[]>()
+  const groupsByRowBottomEdge = new Map<number, string[]>()
   groups.forEach((g, key) => {
-    if (!groupsByStartY.has(g.startY)) groupsByStartY.set(g.startY, [])
-    groupsByStartY.get(g.startY)!.push(key)
+    if (!groupsByRowBottomEdge.has(g.rowBottomEdge)) groupsByRowBottomEdge.set(g.rowBottomEdge, [])
+    groupsByRowBottomEdge.get(g.rowBottomEdge)!.push(key)
   })
-  groupsByStartY.forEach((keys) => {
+  groupsByRowBottomEdge.forEach((keys) => {
     keys
       .slice()
       .sort((a, b) => groups.get(a)!.startX - groups.get(b)!.startX)
@@ -424,7 +429,7 @@ export function computeFamilyTreeLayout(
       const childPos = positions.get(child.id)!
       const endX = childPos.x + NODE_WIDTH / 2
       const endY = childPos.y
-      const midY = group.startY + (endY - group.startY) * laneFraction
+      const midY = group.rowBottomEdge + (endY - group.rowBottomEdge) * laneFraction
 
       edges.push({
         id: `pc-${parents.join('-')}-${child.id}`,
