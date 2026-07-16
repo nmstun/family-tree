@@ -1,8 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useFamilyTree } from '@/hooks/useFamilyTree'
-import { exportToJSON, downloadJSON } from '@/utils/jsonExport'
+import { exportToJSON, downloadJSON, importJSON } from '@/utils/jsonExport'
 import MemberForm from './MemberForm'
 import MemberList from './MemberList'
 import RelationshipManager from './RelationshipManager'
@@ -23,10 +23,14 @@ export default function FamilyTreeApp() {
     removeMarriage,
     addParentChild,
     removeParentChild,
+    importTree,
   } = useFamilyTree()
   const [activeTab, setActiveTab] = useState<
     'members' | 'relations' | 'view' | 'share' | 'export'
   >('members')
+  const [importing, setImporting] = useState(false)
+  const [importError, setImportError] = useState<string | null>(null)
+  const importFileInputRef = useRef<HTMLInputElement>(null)
 
   if (loading || !tree) {
     return (
@@ -39,6 +43,36 @@ export default function FamilyTreeApp() {
   const handleExport = () => {
     const data = exportToJSON(tree)
     downloadJSON(data, `${tree.name}-${Date.now()}.json`)
+  }
+
+  const handleImportFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = '' // 同じファイルを連続で選び直せるようにする
+    if (!file) return
+
+    setImportError(null)
+    const text = await file.text()
+    const data = importJSON(text)
+    if (!data) {
+      setImportError('JSONの形式が正しくありません。このアプリからエクスポートしたファイルを選択してください')
+      return
+    }
+
+    const confirmed = window.confirm(
+      `現在の家系図データ（メンバー${tree.members.length}人）はすべて削除され、\n` +
+        `インポートするデータ（メンバー${data.tree.members.length}人）に置き換わります。\n` +
+        `この操作は取り消せません。よろしいですか？`
+    )
+    if (!confirmed) return
+
+    setImporting(true)
+    try {
+      await importTree(data.tree)
+    } catch {
+      setImportError('インポートに失敗しました。もう一度お試しください')
+    } finally {
+      setImporting(false)
+    }
   }
 
   return (
@@ -174,19 +208,51 @@ export default function FamilyTreeApp() {
         )}
 
         {activeTab === 'export' && (
-          <div className="bg-white rounded-lg shadow p-4 md:p-6">
-            <h2 className="text-lg md:text-2xl font-bold text-gray-900 mb-3 md:mb-4">
-              データをエクスポート
-            </h2>
-            <p className="text-sm md:text-base text-gray-600 mb-4 md:mb-6">
-              現在の家系図をJSON形式でダウンロードできます。
-            </p>
-            <button
-              onClick={handleExport}
-              className="bg-indigo-600 text-white px-4 md:px-6 py-2 md:py-3 rounded-lg hover:bg-indigo-700 transition text-sm md:text-base"
-            >
-              📥 JSONをダウンロード
-            </button>
+          <div className="space-y-4 md:space-y-6">
+            <div className="bg-white rounded-lg shadow p-4 md:p-6">
+              <h2 className="text-lg md:text-2xl font-bold text-gray-900 mb-3 md:mb-4">
+                データをエクスポート
+              </h2>
+              <p className="text-sm md:text-base text-gray-600 mb-4 md:mb-6">
+                現在の家系図をJSON形式でダウンロードできます。
+              </p>
+              <button
+                onClick={handleExport}
+                className="bg-indigo-600 text-white px-4 md:px-6 py-2 md:py-3 rounded-lg hover:bg-indigo-700 transition text-sm md:text-base"
+              >
+                📥 JSONをダウンロード
+              </button>
+            </div>
+
+            <div className="bg-white rounded-lg shadow p-4 md:p-6">
+              <h2 className="text-lg md:text-2xl font-bold text-gray-900 mb-3 md:mb-4">
+                データをインポート
+              </h2>
+              <p className="text-sm md:text-base text-gray-600 mb-4 md:mb-6">
+                このアプリからエクスポートしたJSONファイルを読み込んで復元できます。
+                <br />
+                <span className="text-red-600 font-medium">
+                  現在の家系図データはすべて削除され、インポートしたデータに置き換わります。
+                </span>
+              </p>
+              <input
+                ref={importFileInputRef}
+                type="file"
+                accept="application/json,.json"
+                onChange={handleImportFileSelected}
+                className="hidden"
+              />
+              <button
+                onClick={() => importFileInputRef.current?.click()}
+                disabled={importing}
+                className="bg-white text-indigo-600 border border-indigo-600 px-4 md:px-6 py-2 md:py-3 rounded-lg hover:bg-indigo-50 transition text-sm md:text-base disabled:opacity-50"
+              >
+                {importing ? 'インポート中...' : '📤 JSONを選択してインポート'}
+              </button>
+              {importError && (
+                <p className="text-sm text-red-600 mt-3">⚠ {importError}</p>
+              )}
+            </div>
           </div>
         )}
 

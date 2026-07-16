@@ -359,6 +359,91 @@ export function useFamilyTree() {
     [tree]
   )
 
+  // JSONエクスポートされたデータで現在のツリーを置き換える（インポート）。
+  // インポート元のIDをそのまま使うと他のツリーのIDと衝突する可能性があるため、
+  // メンバーは新しいIDで挿入し直し、旧ID→新IDの対応表を作って配偶者・親子関係の
+  // 参照先を付け替える。既存のメンバーを削除すると配偶者・親子関係は
+  // ON DELETE CASCADE で自動的に連動削除される。
+  const importTree = useCallback(
+    async (data: FamilyTree) => {
+      const treeId = treeIdRef.current
+      if (!treeId) return
+
+      setSyncStatus('syncing')
+      try {
+        const { error: deleteError } = await supabase
+          .from('family_members')
+          .delete()
+          .eq('tree_id', treeId)
+        if (deleteError) throw deleteError
+
+        if (data.members.length > 0) {
+          const { data: insertedMembers, error: insertError } = await supabase
+            .from('family_members')
+            .insert(
+              data.members.map((m) => ({
+                tree_id: treeId,
+                last_name: m.lastName,
+                first_name: m.firstName,
+                birth_date: m.birthDate || null,
+                birth_date_precision: m.birthDatePrecision || 'day',
+                death_date: m.deathDate || null,
+                death_date_precision: m.deathDatePrecision || 'day',
+                gender: m.gender,
+                photo: m.photo || null,
+                notes: m.notes || null,
+              }))
+            )
+            .select('id')
+          if (insertError) throw insertError
+
+          const idMap = new Map<string, string>()
+          data.members.forEach((m, i) => {
+            idMap.set(m.id, (insertedMembers as { id: string }[])[i].id)
+          })
+
+          const marriagesToInsert = data.marriages
+            .filter((m) => idMap.has(m.spouse1Id) && idMap.has(m.spouse2Id))
+            .map((m) => ({
+              tree_id: treeId,
+              spouse1_id: idMap.get(m.spouse1Id)!,
+              spouse2_id: idMap.get(m.spouse2Id)!,
+              marriage_date: m.marriageDate || null,
+            }))
+          if (marriagesToInsert.length > 0) {
+            const { error: marriageError } = await supabase
+              .from('marriages')
+              .insert(marriagesToInsert)
+            if (marriageError) throw marriageError
+          }
+
+          const relationsToInsert = data.parentChildRelations
+            .filter((r) => idMap.has(r.parentId) && idMap.has(r.childId))
+            .map((r) => ({
+              tree_id: treeId,
+              parent_id: idMap.get(r.parentId)!,
+              child_id: idMap.get(r.childId)!,
+            }))
+          if (relationsToInsert.length > 0) {
+            const { error: relationError } = await supabase
+              .from('parent_child_relations')
+              .insert(relationsToInsert)
+            if (relationError) throw relationError
+          }
+        }
+
+        setSyncStatus('synced')
+      } catch (err) {
+        console.error(err)
+        setSyncStatus('error')
+        throw err
+      } finally {
+        await refetchTree(treeId)
+      }
+    },
+    [supabase, refetchTree]
+  )
+
   return {
     tree,
     loading,
@@ -372,5 +457,6 @@ export function useFamilyTree() {
     addParentChild,
     removeParentChild,
     getMember,
+    importTree,
   }
 }
