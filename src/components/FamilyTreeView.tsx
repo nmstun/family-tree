@@ -122,10 +122,16 @@ export default function FamilyTreeView({
   }, [svgWidth])
 
   // 家系図全体をPNG画像としてクリップボードにコピーする。画面のズームやスクロール
-  // 位置に関わらず、SVGの実寸（viewBox基準）で高解像度（2倍）に描画することで、
+  // 位置に関わらず、SVGの実寸（viewBox基準）で高解像度に描画することで、
   // 貼り付け先で印刷やLINE共有にも耐えられる画質にする。写真はすでにbase64の
   // data URLで埋め込まれているため、canvasへの描画がクロスオリジンで汚染される
   // 心配はない。
+  //
+  // svgRef.current の width/height 属性は画面上のズーム倍率（scale）がかかった値になっている
+  // （見た目のズームが小さいと、この属性値も小さくなる）。ここをそのままシリアライズすると、
+  // ブラウザはSVGをその小さいサイズで一度ラスタライズしてからcanvasに引き伸ばすため、
+  // ズームが小さいときほど書き出し画像がぼやける。そのため複製したSVGのwidth/heightを
+  // 書き出し用の実解像度に上書きしてから使う。
   //
   // 画像の生成（SVGの読み込み・canvas描画）は非同期のため、生成し終わってから
   // clipboard.write を呼ぶと、クリックのユーザー操作から時間が経ちすぎて
@@ -136,7 +142,22 @@ export default function FamilyTreeView({
     const svgEl = svgRef.current
     if (!svgEl) throw new Error('家系図が見つかりません')
 
-    const svgString = new XMLSerializer().serializeToString(svgEl)
+    // canvasのサイズ上限（ブラウザにより異なるが概ね1万数千px四方）を超えないよう、
+    // 大きな家系図では倍率を落として安全側に倒す
+    const MAX_EXPORT_DIMENSION = 8000
+    const exportScale = Math.min(
+      3,
+      MAX_EXPORT_DIMENSION / svgWidth,
+      MAX_EXPORT_DIMENSION / svgHeight
+    )
+    const exportWidth = Math.round(svgWidth * exportScale)
+    const exportHeight = Math.round(svgHeight * exportScale)
+
+    const clone = svgEl.cloneNode(true) as SVGSVGElement
+    clone.setAttribute('width', String(exportWidth))
+    clone.setAttribute('height', String(exportHeight))
+
+    const svgString = new XMLSerializer().serializeToString(clone)
     const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' })
     const svgUrl = URL.createObjectURL(svgBlob)
 
@@ -147,10 +168,9 @@ export default function FamilyTreeView({
       img.src = svgUrl
     })
 
-    const exportScale = 2
     const canvas = document.createElement('canvas')
-    canvas.width = svgWidth * exportScale
-    canvas.height = svgHeight * exportScale
+    canvas.width = exportWidth
+    canvas.height = exportHeight
     const ctx = canvas.getContext('2d')
     if (!ctx) throw new Error('このブラウザは画像のコピーに対応していません')
 
