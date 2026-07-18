@@ -81,6 +81,7 @@ export function useFamilyTree() {
   const [tree, setTree] = useState<FamilyTree | null>(null)
   const [loading, setLoading] = useState(true)
   const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'synced' | 'error'>('idle')
+  const [selfMemberId, setSelfMemberId] = useState<string | null>(null)
   const treeIdRef = useRef<string | null>(null)
 
   // 現在のツリーの最新データを Supabase から取得し直す
@@ -111,6 +112,24 @@ export function useFamilyTree() {
         createdAt: new Date(t.created_at).getTime(),
         updatedAt: new Date(t.updated_at).getTime(),
       })
+    },
+    [supabase]
+  )
+
+  // 現在ログイン中のユーザーが「自分」として設定しているメンバーを取得し直す
+  const refetchSelfMember = useCallback(
+    async (treeId: string) => {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+      if (!user) return
+      const { data: selfRow } = await supabase
+        .from('family_tree_members')
+        .select('member_id')
+        .eq('tree_id', treeId)
+        .eq('user_id', user.id)
+        .maybeSingle()
+      setSelfMemberId((selfRow?.member_id as string | null) ?? null)
     },
     [supabase]
   )
@@ -158,6 +177,7 @@ export function useFamilyTree() {
 
       treeIdRef.current = treeId
       await refetchTree(treeId)
+      if (!cancelled) await refetchSelfMember(treeId)
 
       channel = supabase
         .channel(`family_tree_${treeId}`)
@@ -192,7 +212,7 @@ export function useFamilyTree() {
       cancelled = true
       if (channel) supabase.removeChannel(channel)
     }
-  }, [supabase, refetchTree])
+  }, [supabase, refetchTree, refetchSelfMember])
 
   const withSyncStatus = useCallback(
     async (promise: PromiseLike<{ error: unknown }>) => {
@@ -439,9 +459,30 @@ export function useFamilyTree() {
         throw err
       } finally {
         await refetchTree(treeId)
+        // インポートで全メンバーが入れ替わり、「自分」の紐づけは
+        // ON DELETE SET NULL で自動的に外れているため、こちらも取得し直す
+        await refetchSelfMember(treeId)
       }
     },
-    [supabase, refetchTree]
+    [supabase, refetchTree, refetchSelfMember]
+  )
+
+  // 自分をこの家系図上の特定のメンバーとして設定する（null で解除）
+  const setSelfMember = useCallback(
+    async (memberId: string | null) => {
+      const treeId = treeIdRef.current
+      if (!treeId) return
+      const { error } = await supabase.rpc('set_self_member', {
+        p_tree_id: treeId,
+        p_member_id: memberId,
+      })
+      if (error) {
+        console.error(error)
+        return
+      }
+      setSelfMemberId(memberId)
+    },
+    [supabase]
   )
 
   return {
@@ -458,5 +499,7 @@ export function useFamilyTree() {
     removeParentChild,
     getMember,
     importTree,
+    selfMemberId,
+    setSelfMember,
   }
 }

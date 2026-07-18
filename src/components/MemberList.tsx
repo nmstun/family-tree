@@ -12,9 +12,17 @@ interface MemberListProps {
   members: FamilyMember[]
   onUpdate: (id: string, updates: Partial<FamilyMember>) => void
   onDelete: (id: string) => void
+  selfMemberId: string | null
+  onSetSelfMember: (id: string | null) => void
 }
 
-export default function MemberList({ members, onUpdate, onDelete }: MemberListProps) {
+export default function MemberList({
+  members,
+  onUpdate,
+  onDelete,
+  selfMemberId,
+  onSetSelfMember,
+}: MemberListProps) {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const [otoshidamaOnly, setOtoshidamaOnly] = useState(false)
@@ -103,6 +111,11 @@ export default function MemberList({ members, onUpdate, onDelete }: MemberListPr
                 <div className="flex-1 min-w-0">
                   <p className="text-sm md:text-base font-medium text-gray-900 truncate">
                     {member.lastName} {member.firstName}
+                    {member.id === selfMemberId && (
+                      <span className="ml-1.5 text-[10px] md:text-xs font-normal bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full align-middle">
+                        ⭐ 自分
+                      </span>
+                    )}
                   </p>
                   <p className="text-xs text-gray-500 truncate">
                     {member.gender === 'male' && '男性'}
@@ -116,6 +129,23 @@ export default function MemberList({ members, onUpdate, onDelete }: MemberListPr
 
                 {/* Actions */}
                 <div className="flex-shrink-0 flex gap-1.5 md:gap-2">
+                  <button
+                    onClick={() =>
+                      onSetSelfMember(member.id === selfMemberId ? null : member.id)
+                    }
+                    title={
+                      member.id === selfMemberId
+                        ? '「自分」の設定を解除'
+                        : 'このメンバーを自分として設定'
+                    }
+                    className={`px-2 md:px-3 py-1 text-xs md:text-sm rounded transition ${
+                      member.id === selfMemberId
+                        ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
+                        : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                    }`}
+                  >
+                    {member.id === selfMemberId ? '★' : '☆'}
+                  </button>
                   <button
                     onClick={() => setEditingId(member.id)}
                     className="px-2 md:px-3 py-1 text-xs md:text-sm bg-indigo-100 text-indigo-700 rounded hover:bg-indigo-200 transition"

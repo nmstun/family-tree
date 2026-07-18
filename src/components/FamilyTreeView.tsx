@@ -6,10 +6,14 @@ import { computeFamilyTreeLayout, NODE_WIDTH, NODE_HEIGHT, V_GAP } from '@/utils
 import { calculateAge } from '@/utils/age'
 
 interface FamilyTreeViewProps {
+  treeId: string
   members: FamilyMember[]
   marriages: Marriage[]
   parentChildRelations: ParentChildRelation[]
+  selfMemberId?: string | null
 }
+
+const COLLAPSE_STORAGE_PREFIX = 'familyTree:collapsed:'
 
 const GENDER_COLOR: Record<FamilyMember['gender'], { border: string; bg: string }> = {
   male: { border: '#3b82f6', bg: '#eff6ff' },
@@ -68,21 +72,122 @@ function transposePath(path: string): string {
 }
 
 export default function FamilyTreeView({
+  treeId,
   members,
   marriages,
   parentChildRelations,
+  selfMemberId = null,
 }: FamilyTreeViewProps) {
   const [scale, setScale] = useState(1)
   const [vertical, setVertical] = useState(true)
   const [copying, setCopying] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [collapsedRootIds, setCollapsedRootIds] = useState<Set<string>>(() => new Set())
   const containerRef = useRef<HTMLDivElement>(null)
   const svgRef = useRef<SVGSVGElement>(null)
   const hasAutoFitRef = useRef(false)
 
+  // 折りたたみ状態はこのブラウザだけに保存する（他の共同編集者には影響しない）。
+  // 読み込みはマウント時（treeId確定時）の1回のみ。保存は変更時に直接書き込む
+  // （読み込み・保存の両方をuseEffectにすると、マウント時に読み込み直後の
+  // 古い状態で保存Effectが走り、直後にlocalStorageを空で上書きしてしまう）。
+  useEffect(() => {
+    if (!treeId) return
+    try {
+      const raw = localStorage.getItem(COLLAPSE_STORAGE_PREFIX + treeId)
+      setCollapsedRootIds(raw ? new Set(JSON.parse(raw)) : new Set())
+    } catch {
+      setCollapsedRootIds(new Set())
+    }
+  }, [treeId])
+
+  const persistCollapsed = (next: Set<string>) => {
+    if (!treeId) return
+    try {
+      localStorage.setItem(COLLAPSE_STORAGE_PREFIX + treeId, JSON.stringify(Array.from(next)))
+    } catch {
+      // プライベートブラウズなどlocalStorageが使えない環境では諦める
+    }
+  }
+
+  // 「このメンバーを起点に折りたたんだ場合に隠れるメンバー」の集合を、
+  // 子を持つメンバーごとに事前計算しておく。子(down)と配偶者(spouse)を
+  // 交互にたどり、選択したメンバーより下の家族グループ全体を1セットにまとめる。
+  const { childrenOf, hiddenSetByRoot } = useMemo(() => {
+    const childrenMap = new Map<string, string[]>()
+    parentChildRelations.forEach((r) => {
+      if (!childrenMap.has(r.parentId)) childrenMap.set(r.parentId, [])
+      childrenMap.get(r.parentId)!.push(r.childId)
+    })
+    const spouseMap = new Map<string, string[]>()
+    marriages.forEach((m) => {
+      if (!spouseMap.has(m.spouse1Id)) spouseMap.set(m.spouse1Id, [])
+      spouseMap.get(m.spouse1Id)!.push(m.spouse2Id)
+      if (!spouseMap.has(m.spouse2Id)) spouseMap.set(m.spouse2Id, [])
+      spouseMap.get(m.spouse2Id)!.push(m.spouse1Id)
+    })
+
+    const hiddenByRoot = new Map<string, Set<string>>()
+    childrenMap.forEach((_, rootId) => {
+      const hidden = new Set<string>()
+      const queue = [...(childrenMap.get(rootId) ?? [])]
+      while (queue.length > 0) {
+        const id = queue.shift()!
+        if (hidden.has(id)) continue
+        hidden.add(id)
+        ;(spouseMap.get(id) ?? []).forEach((s) => {
+          if (!hidden.has(s)) queue.push(s)
+        })
+        ;(childrenMap.get(id) ?? []).forEach((c) => {
+          if (!hidden.has(c)) queue.push(c)
+        })
+      }
+      hiddenByRoot.set(rootId, hidden)
+    })
+
+    return { childrenOf: childrenMap, hiddenSetByRoot: hiddenByRoot }
+  }, [parentChildRelations, marriages])
+
+  const hiddenMemberIds = useMemo(() => {
+    const hidden = new Set<string>()
+    collapsedRootIds.forEach((rootId) => {
+      hiddenSetByRoot.get(rootId)?.forEach((id) => hidden.add(id))
+    })
+    return hidden
+  }, [collapsedRootIds, hiddenSetByRoot])
+
+  const visibleMembers = useMemo(
+    () => members.filter((m) => !hiddenMemberIds.has(m.id)),
+    [members, hiddenMemberIds]
+  )
+  const visibleMarriages = useMemo(
+    () =>
+      marriages.filter(
+        (m) => !hiddenMemberIds.has(m.spouse1Id) && !hiddenMemberIds.has(m.spouse2Id)
+      ),
+    [marriages, hiddenMemberIds]
+  )
+  const visibleRelations = useMemo(
+    () =>
+      parentChildRelations.filter(
+        (r) => !hiddenMemberIds.has(r.parentId) && !hiddenMemberIds.has(r.childId)
+      ),
+    [parentChildRelations, hiddenMemberIds]
+  )
+
+  const toggleCollapse = (memberId: string) => {
+    setCollapsedRootIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(memberId)) next.delete(memberId)
+      else next.add(memberId)
+      persistCollapsed(next)
+      return next
+    })
+  }
+
   const layout = useMemo(
-    () => computeFamilyTreeLayout(members, marriages, parentChildRelations),
-    [members, marriages, parentChildRelations]
+    () => computeFamilyTreeLayout(visibleMembers, visibleMarriages, visibleRelations),
+    [visibleMembers, visibleMarriages, visibleRelations]
   )
 
   const padding = 20
@@ -110,16 +215,48 @@ export default function FamilyTreeView({
 
   useEffect(() => {
     if (hasAutoFitRef.current || svgWidth === 0) return
-    const containerWidth = containerRef.current?.clientWidth
+    const container = containerRef.current
+    const containerWidth = container?.clientWidth
     if (!containerWidth) return
     hasAutoFitRef.current = true
     const fitScale = Math.min(1, (containerWidth - 8) / svgWidth)
-    if (fitScale < 0.95) {
-      setScale(Math.max(0.75, +fitScale.toFixed(2)))
-    } else {
-      setScale(1)
+    const nextScale = fitScale < 0.95 ? Math.max(0.75, +fitScale.toFixed(2)) : 1
+    setScale(nextScale)
+
+    // 「自分」が設定されていれば、家系図を開いたときに自分のノードが
+    // 見える位置までスクロールしておく（大きな家系図で迷子にならないように）
+    if (selfMemberId && container) {
+      const selfNode = layout.nodes.find((n) => n.member.id === selfMemberId)
+      if (selfNode) {
+        const nodeX = vertical ? selfNode.y : selfNode.x
+        const nodeY = vertical ? selfNode.x : selfNode.y
+        const boxW = vertical ? NODE_HEIGHT : NODE_WIDTH
+        const boxH = vertical ? NODE_WIDTH : NODE_HEIGHT
+        requestAnimationFrame(() => {
+          container.scrollTo({
+            left: Math.max(0, (padding + nodeX + boxW / 2) * nextScale - container.clientWidth / 2),
+            top: Math.max(0, (padding + nodeY + boxH / 2) * nextScale - container.clientHeight / 2),
+          })
+        })
+      }
     }
   }, [svgWidth])
+
+  // 指定したメンバーのノードが見える位置までスクロールする（「自分の位置へ」ボタン用）
+  const centerOnMember = (memberId: string) => {
+    const targetNode = layout.nodes.find((n) => n.member.id === memberId)
+    const container = containerRef.current
+    if (!targetNode || !container) return
+    const nodeX = vertical ? targetNode.y : targetNode.x
+    const nodeY = vertical ? targetNode.x : targetNode.y
+    const boxW = vertical ? NODE_HEIGHT : NODE_WIDTH
+    const boxH = vertical ? NODE_WIDTH : NODE_HEIGHT
+    container.scrollTo({
+      left: Math.max(0, (padding + nodeX + boxW / 2) * scale - container.clientWidth / 2),
+      top: Math.max(0, (padding + nodeY + boxH / 2) * scale - container.clientHeight / 2),
+      behavior: 'smooth',
+    })
+  }
 
   // 家系図全体をPNG画像としてクリップボードにコピーする。画面のズームやスクロール
   // 位置に関わらず、SVGの実寸（viewBox基準）で高解像度に描画することで、
@@ -255,6 +392,29 @@ export default function FamilyTreeView({
           {copying ? 'コピー中...' : copied ? 'コピーしました' : '画像をコピー'}
         </button>
 
+        {selfMemberId && !hiddenMemberIds.has(selfMemberId) && (
+          <button
+            onClick={() => centerOnMember(selfMemberId)}
+            className="min-h-[44px] md:min-h-[32px] px-3 inline-flex items-center gap-1.5 text-sm text-gray-600 bg-white hover:bg-gray-100 rounded-full shadow-sm border border-gray-200 transition"
+          >
+            <span aria-hidden>📍</span>
+            自分の位置へ
+          </button>
+        )}
+
+        {collapsedRootIds.size > 0 && (
+          <button
+            onClick={() => {
+              setCollapsedRootIds(new Set())
+              persistCollapsed(new Set())
+            }}
+            className="min-h-[44px] md:min-h-[32px] px-3 inline-flex items-center gap-1.5 text-sm text-gray-600 bg-white hover:bg-gray-100 rounded-full shadow-sm border border-gray-200 transition"
+          >
+            <span aria-hidden>⊕</span>
+            すべて展開（{collapsedRootIds.size}）
+          </button>
+        )}
+
         {/* Legend */}
         <div className="flex flex-wrap gap-2 text-xs md:text-sm text-gray-600">
           <div className="flex items-center gap-1.5 bg-white rounded-full border border-gray-200 px-2.5 py-1">
@@ -276,6 +436,10 @@ export default function FamilyTreeView({
           <div className="flex items-center gap-1.5 bg-white rounded-full border border-gray-200 px-2.5 py-1">
             <span className="inline-block w-4 border-t-2 border-gray-300" />
             親子
+          </div>
+          <div className="flex items-center gap-1.5 bg-white rounded-full border border-gray-200 px-2.5 py-1">
+            <span aria-hidden>ー / ＋</span>
+            クリックで子孫を折りたたみ
           </div>
         </div>
       </div>
@@ -345,6 +509,10 @@ export default function FamilyTreeView({
               const boxWidth = vertical ? NODE_HEIGHT : NODE_WIDTH
               const boxHeight = vertical ? NODE_WIDTH : NODE_HEIGHT
               const centerX = boxWidth / 2
+              const isSelf = node.member.id === selfMemberId
+              const isCollapsed = collapsedRootIds.has(node.member.id)
+              const hiddenCount = hiddenSetByRoot.get(node.member.id)?.size ?? 0
+              const hasChildren = childrenOf.has(node.member.id)
 
               return (
                 <g
@@ -357,9 +525,14 @@ export default function FamilyTreeView({
                     height={boxHeight}
                     rx={14}
                     fill={colors.bg}
-                    stroke={colors.border}
-                    strokeWidth={1.5}
+                    stroke={isSelf ? '#f59e0b' : colors.border}
+                    strokeWidth={isSelf ? 3 : 1.5}
                   />
+                  {isSelf && (
+                    <text x={8} y={16} fontSize={13}>
+                      ⭐
+                    </text>
+                  )}
                   {node.member.photo ? (
                     <>
                       <clipPath id={`clip-${node.member.id}`}>
@@ -404,6 +577,37 @@ export default function FamilyTreeView({
                     <text x={centerX} y={96} textAnchor="middle" fontSize={12} fill="#6b7280">
                       {age}
                     </text>
+                  )}
+                  {hasChildren && (
+                    <g
+                      transform={`translate(${boxWidth - 16}, ${boxHeight - 16})`}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        toggleCollapse(node.member.id)
+                      }}
+                      style={{ cursor: 'pointer' }}
+                    >
+                      <title>
+                        {isCollapsed
+                          ? `${hiddenCount}人を非表示中（クリックで再表示）`
+                          : 'クリックで子孫を折りたたむ'}
+                      </title>
+                      <circle
+                        r={isCollapsed ? 12 : 10}
+                        fill={isCollapsed ? '#4f46e5' : '#ffffff'}
+                        stroke="#4f46e5"
+                        strokeWidth={1.5}
+                      />
+                      <text
+                        textAnchor="middle"
+                        dominantBaseline="central"
+                        fontSize={isCollapsed ? 11 : 14}
+                        fontWeight={700}
+                        fill={isCollapsed ? '#ffffff' : '#4f46e5'}
+                      >
+                        {isCollapsed ? (hiddenCount > 99 ? '99+' : hiddenCount) : '−'}
+                      </text>
+                    </g>
                   )}
                 </g>
               )

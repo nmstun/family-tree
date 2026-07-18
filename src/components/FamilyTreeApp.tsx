@@ -24,6 +24,8 @@ export default function FamilyTreeApp() {
     addParentChild,
     removeParentChild,
     importTree,
+    selfMemberId,
+    setSelfMember,
   } = useFamilyTree()
   const [activeTab, setActiveTab] = useState<
     'members' | 'relations' | 'view' | 'share' | 'export'
@@ -162,6 +164,8 @@ export default function FamilyTreeApp() {
                 members={tree.members}
                 onUpdate={updateMember}
                 onDelete={deleteMember}
+                selfMemberId={selfMemberId}
+                onSetSelfMember={setSelfMember}
               />
             </div>
           </div>
@@ -191,9 +195,11 @@ export default function FamilyTreeApp() {
               家系図表示
             </h2>
             <FamilyTreeView
+              treeId={tree.id}
               members={tree.members}
               marriages={tree.marriages}
               parentChildRelations={tree.parentChildRelations}
+              selfMemberId={selfMemberId}
             />
           </div>
         )}
