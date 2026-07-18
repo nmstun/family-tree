@@ -3,7 +3,7 @@ import { FamilyMember, Marriage, ParentChildRelation } from '@/types'
 export const NODE_WIDTH = 140
 export const NODE_HEIGHT = 112
 export const H_GAP = 36
-export const V_GAP = 90
+export const V_GAP = 150
 
 export interface LayoutNode {
   member: FamilyMember
@@ -429,18 +429,23 @@ export function computeFamilyTreeLayout(
   // どの親子の線か分からなくなる。家族（親の組み合わせ）ごとに横棒の高さを
   // 数段に分けてずらし、それでも他の家族の線と交差する箇所は
   // addCrossingJumps でジャンプさせて「別の線を飛び越えているだけ」と分かるようにする。
-  const BUS_LANES = 3
+  //
+  // レーン数は固定にせず、同じ世代境界を共有する家族の数に合わせて動的に決める。
+  // 固定レーン数＋mod割り当てだと、その数を超える家族がいたときに
+  // 別の家族と同じレーン（＝同じ高さ）に割り当てられ、横棒が完全に重なってしまう。
   const laneIndexByGroup = new Map<string, number>()
+  const laneCountByRowBottomEdge = new Map<number, number>()
   const groupsByRowBottomEdge = new Map<number, string[]>()
   groups.forEach((g, key) => {
     if (!groupsByRowBottomEdge.has(g.rowBottomEdge)) groupsByRowBottomEdge.set(g.rowBottomEdge, [])
     groupsByRowBottomEdge.get(g.rowBottomEdge)!.push(key)
   })
-  groupsByRowBottomEdge.forEach((keys) => {
+  groupsByRowBottomEdge.forEach((keys, rowBottomEdge) => {
+    laneCountByRowBottomEdge.set(rowBottomEdge, keys.length)
     keys
       .slice()
       .sort((a, b) => groups.get(a)!.startX - groups.get(b)!.startX)
-      .forEach((key, i) => laneIndexByGroup.set(key, i % BUS_LANES))
+      .forEach((key, i) => laneIndexByGroup.set(key, i))
   })
 
   // 子への線のうち、自分の親の配偶者線とだけは交差判定・ジャンプの対象外にする
@@ -451,7 +456,8 @@ export function computeFamilyTreeLayout(
 
   groups.forEach((group, key) => {
     const lane = laneIndexByGroup.get(key) ?? 0
-    const laneFraction = 0.3 + (0.4 * lane) / Math.max(BUS_LANES - 1, 1)
+    const laneCount = laneCountByRowBottomEdge.get(group.rowBottomEdge) ?? 1
+    const laneFraction = laneCount <= 1 ? 0.5 : 0.2 + (0.6 * lane) / (laneCount - 1)
     group.children.forEach(({ child, parents }) => {
       const childPos = positions.get(child.id)!
       const endX = childPos.x + NODE_WIDTH / 2
