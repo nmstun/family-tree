@@ -71,6 +71,10 @@ npm start
 npm run lint
 ```
 
+## 依存関係の更新
+
+Renovate（`renovate.json`）により、依存パッケージの更新PRが週次で自動作成されます（実際に動かすにはGitHub Appとして[Renovate](https://github.com/apps/renovate)を本リポジトリにインストールしてください）。lockfile（`package-lock.json`）によりインストールされるバージョンは常に固定されているため、PRを確認してからマージする運用です。
+
 ## デプロイ
 
 - **Vercel**: GitHubリポジトリ連携によりmainブランチへのpushで自動デプロイ
