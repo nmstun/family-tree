@@ -8,6 +8,7 @@ import { Alert, Button, EmptyState } from './ui'
 
 interface FamilyTreeViewProps {
   treeId: string
+  treeName?: string
   members: FamilyMember[]
   marriages: Marriage[]
   parentChildRelations: ParentChildRelation[]
@@ -95,6 +96,7 @@ function transposePath(path: string): string {
 
 export default function FamilyTreeView({
   treeId,
+  treeName,
   members,
   marriages,
   parentChildRelations,
@@ -405,6 +407,13 @@ export default function FamilyTreeView({
           {copying ? 'コピー中...' : copied ? 'コピーしました' : '画像をコピー'}
         </Button>
 
+        {/* ブラウザの印刷ダイアログで「PDFとして保存」を選ぶとPDFになる。
+            SVGのまま印刷するので、用紙に合わせて縮小しても文字が潰れない。 */}
+        <Button variant="toolbar" onClick={() => window.print()}>
+          <span aria-hidden>🖨️</span>
+          PDF・印刷
+        </Button>
+
         {selfMemberId && !hiddenMemberIds.has(selfMemberId) && (
           <Button variant="toolbar" onClick={() => centerOnMember(selfMemberId)}>
             <span aria-hidden>📍</span>
@@ -444,9 +453,14 @@ export default function FamilyTreeView({
       {/* Scrollable canvas */}
       <div
         ref={containerRef}
-        className="overflow-auto rounded-xl bg-gradient-to-br from-gray-50 to-gray-100"
+        className="print-area overflow-auto rounded-xl bg-gradient-to-br from-gray-50 to-gray-100"
         style={{ maxHeight: '70vh' }}
       >
+        {/* 印刷したときだけ出る見出し。誰の家系図をいつ出力したものか分かるようにする */}
+        <div className="print-only mb-3 text-center">
+          <h1 className="text-lg font-bold text-gray-900">{treeName ?? '家系図'}</h1>
+          <p className="text-xs text-gray-500">{new Date().toLocaleDateString('ja-JP')} 時点</p>
+        </div>
         <svg
           ref={svgRef}
           width={svgWidth * scale}
@@ -577,6 +591,7 @@ export default function FamilyTreeView({
                   )}
                   {hasChildren && (
                     <g
+                      className="print-hide"
                       transform={`translate(${boxWidth - 16}, ${boxHeight - 16})`}
                       onClick={(e) => {
                         e.stopPropagation()

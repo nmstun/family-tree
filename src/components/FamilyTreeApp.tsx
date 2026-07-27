@@ -179,6 +179,7 @@ export default function FamilyTreeApp() {
             <SectionHeading>家系図表示</SectionHeading>
             <FamilyTreeView
               treeId={tree.id}
+              treeName={tree.name}
               members={tree.members}
               marriages={tree.marriages}
               parentChildRelations={tree.parentChildRelations}

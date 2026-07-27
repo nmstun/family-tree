@@ -1,3 +1,61 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* ===== 印刷（PDF保存）用 =====
+   ブラウザの印刷ダイアログで「PDFとして保存」を選ぶと、家系図をPDFにできる。
+   家系図はSVG（ベクター）なので、縮小しても文字がぼやけない。 */
+@media print {
+  /* 家系図以外は出さない。display:none だと祖先要素まで消す指定が要るため、
+     visibility で消してから対象だけ表示し直す（レイアウトは維持される）。 */
+  body * {
+    visibility: hidden;
+  }
+  .print-area,
+  .print-area * {
+    visibility: visible;
+  }
+
+  .print-area {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    /* 画面表示用のスクロール枠・背景は印刷では邪魔になるので解除する */
+    max-height: none !important;
+    overflow: visible !important;
+    background: none !important;
+    border-radius: 0 !important;
+  }
+
+  /* 画面上のズーム倍率に関係なく、用紙1枚に収まるよう縮小する。
+     width/height 属性ではなく viewBox を基準に拡大縮小させる。
+     縦は見出しのぶんを引いた高さに収め、横は用紙の中央に置く。 */
+  .print-area svg {
+    display: block;
+    margin: 0 auto;
+    width: auto !important;
+    height: auto !important;
+    max-width: 100%;
+    max-height: 90vh;
+  }
+
+  /* 折りたたみボタンは操作用なので印刷しない */
+  .print-hide {
+    display: none !important;
+  }
+
+  /* 画面では出さず、印刷したときだけ出す見出し */
+  .print-only {
+    display: block !important;
+  }
+
+  @page {
+    margin: 10mm;
+  }
+}
+
+/* 印刷用の見出しは画面では隠しておく */
+.print-only {
+  display: none;
+}
