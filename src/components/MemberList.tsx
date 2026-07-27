@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { FamilyMember } from '@/types'
+import { FamilyMember, Marriage, ParentChildRelation } from '@/types'
 import { calculateAge, calculateGrade, formatAgeSummary } from '@/utils/age'
 import { sortMembersByName } from '@/utils/sortMembers'
 import MemberForm from './MemberForm'
@@ -11,6 +11,8 @@ const OTOSHIDAMA_MAX_AGE = 22
 
 interface MemberListProps {
   members: FamilyMember[]
+  marriages: Marriage[]
+  parentChildRelations: ParentChildRelation[]
   onUpdate: (id: string, updates: Partial<FamilyMember>) => void
   onDelete: (id: string) => void
   selfMemberId: string | null
@@ -35,6 +37,8 @@ function memberSummary(member: FamilyMember) {
 
 export default function MemberList({
   members,
+  marriages,
+  parentChildRelations,
   onUpdate,
   onDelete,
   selfMemberId,
@@ -59,12 +63,26 @@ export default function MemberList({
   }, [sortedMembers, query, otoshidamaOnly])
 
   // メンバーを消すと配偶者・親子関係も連動して消える（DB側の ON DELETE CASCADE）。
-  // 取り消せない操作なので、実行前に必ず確認する。
+  // 取り消せない操作なので、何がどれだけ消えるのかを具体的に示してから確認する。
   const handleDelete = async (member: FamilyMember) => {
+    const marriageCount = marriages.filter(
+      (m) => m.spouse1Id === member.id || m.spouse2Id === member.id
+    ).length
+    const relationCount = parentChildRelations.filter(
+      (r) => r.parentId === member.id || r.childId === member.id
+    ).length
+
+    const affected = [
+      marriageCount > 0 && `配偶者関係 ${marriageCount}件`,
+      relationCount > 0 && `親子関係 ${relationCount}件`,
+    ].filter(Boolean)
+
     const ok = await confirm({
       title: `${fullName(member)} を削除しますか？`,
       message:
-        'このメンバーに設定されている配偶者関係・親子関係もあわせて削除されます。\nこの操作は取り消せません。',
+        affected.length > 0
+          ? `${affected.join('と')}もあわせて削除されます。\nこの操作は取り消せません。`
+          : 'この操作は取り消せません。',
       confirmLabel: '削除する',
       destructive: true,
     })

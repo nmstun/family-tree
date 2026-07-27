@@ -14,6 +14,7 @@ import { wouldCreateCycle } from '@/utils/familyTreeValidation'
 
 // ---- DB の行 <-> アプリの型 の変換 ----
 
+// 写真（base64）は1件で数十KBあるため、通常の取得では読まずに別扱いにする
 type MemberRow = {
   id: string
   last_name: string
@@ -23,10 +24,13 @@ type MemberRow = {
   death_date: string | null
   death_date_precision: DatePrecision
   gender: Gender
-  photo: string | null
   notes: string | null
   created_at: string
+  updated_at: string
 }
+
+const MEMBER_COLUMNS =
+  'id,last_name,first_name,birth_date,birth_date_precision,death_date,death_date_precision,gender,notes,created_at,updated_at'
 
 type MarriageRow = {
   id: string
@@ -47,7 +51,7 @@ type TreeRow = {
   updated_at: string
 }
 
-function mapMember(row: MemberRow): FamilyMember {
+function mapMember(row: MemberRow, photo: string | null): FamilyMember {
   return {
     id: row.id,
     lastName: row.last_name,
@@ -57,7 +61,7 @@ function mapMember(row: MemberRow): FamilyMember {
     deathDate: row.death_date ?? undefined,
     deathDatePrecision: row.death_date_precision,
     gender: row.gender,
-    photo: row.photo ?? undefined,
+    photo: photo ?? undefined,
     notes: row.notes ?? undefined,
     createdAt: new Date(row.created_at).getTime(),
   }
@@ -80,6 +84,10 @@ function mapRelation(row: RelationRow): ParentChildRelation {
 // 体感で遅れを感じない範囲で、一括操作のイベントを吸収できる長さにする。
 const REFETCH_DEBOUNCE_MS = 300
 
+// 写真を取り直すときの1リクエストあたりの件数。
+// id を並べたGETリクエストになるため、URLが長くなりすぎないよう分割する。
+const PHOTO_FETCH_CHUNK = 50
+
 export function useFamilyTree() {
   const supabase = createClient()
   const [tree, setTree] = useState<FamilyTree | null>(null)
@@ -88,6 +96,10 @@ export function useFamilyTree() {
   const [selfMemberId, setSelfMemberId] = useState<string | null>(null)
   const treeIdRef = useRef<string | null>(null)
   const refetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // メンバーIDごとの写真キャッシュ。updated_at が変わったときだけ取り直す
+  const photoCacheRef = useRef(new Map<string, { updatedAt: string; photo: string | null }>())
+  // 直前に失敗した保存処理（「再試行」で同じ処理をやり直すために保持する）
+  const lastFailedRunRef = useRef<(() => PromiseLike<{ error: unknown }>) | null>(null)
 
   // 現在のツリーの最新データを Supabase から取得し直す
   // （自分の操作・他のユーザーの操作、どちらの後にも呼ばれる）
@@ -98,7 +110,7 @@ export function useFamilyTree() {
           supabase.from('family_trees').select('*').eq('id', treeId).single(),
           supabase
             .from('family_members')
-            .select('*')
+            .select(MEMBER_COLUMNS)
             .eq('tree_id', treeId)
             .order('created_at', { ascending: true }),
           supabase.from('marriages').select('*').eq('tree_id', treeId),
@@ -107,11 +119,39 @@ export function useFamilyTree() {
 
       if (!treeRow) return
 
+      const rows = (memberRows ?? []) as unknown as MemberRow[]
+      const cache = photoCacheRef.current
+
+      // 写真は updated_at が変わったメンバーのぶんだけ取り直す。
+      // 一度取得すれば以降の再取得では転送されないため、
+      // 人数が増えても「変更のあった行ぶん」しか流れない。
+      const stale = rows.filter((r) => cache.get(r.id)?.updatedAt !== r.updated_at)
+      for (let i = 0; i < stale.length; i += PHOTO_FETCH_CHUNK) {
+        const chunk = stale.slice(i, i + PHOTO_FETCH_CHUNK)
+        const { data: photoRows } = await supabase
+          .from('family_members')
+          .select('id,photo')
+          .in(
+            'id',
+            chunk.map((r) => r.id)
+          )
+        ;((photoRows ?? []) as { id: string; photo: string | null }[]).forEach((p) => {
+          const row = chunk.find((r) => r.id === p.id)
+          if (row) cache.set(p.id, { updatedAt: row.updated_at, photo: p.photo })
+        })
+      }
+
+      // 削除されたメンバーのぶんはキャッシュから捨てる
+      const alive = new Set(rows.map((r) => r.id))
+      cache.forEach((_, id) => {
+        if (!alive.has(id)) cache.delete(id)
+      })
+
       const t = treeRow as TreeRow
       setTree({
         id: t.id,
         name: t.name,
-        members: ((memberRows ?? []) as MemberRow[]).map(mapMember),
+        members: rows.map((r) => mapMember(r, cache.get(r.id)?.photo ?? null)),
         marriages: ((marriageRows ?? []) as MarriageRow[]).map(mapMarriage),
         parentChildRelations: ((relationRows ?? []) as RelationRow[]).map(mapRelation),
         createdAt: new Date(t.created_at).getTime(),
@@ -236,21 +276,37 @@ export function useFamilyTree() {
     }
   }, [supabase, refetchTree, refetchSelfMember, scheduleRefetch])
 
+  // 保存処理は「実行する関数」として受け取る。
+  // 完成済みのPromiseを受け取る形だと、失敗しても同じ処理をもう一度
+  // 実行できず、画面にエラーを出すだけで終わっていた。
   const withSyncStatus = useCallback(
-    async (promise: PromiseLike<{ error: unknown }>) => {
+    async (run: () => PromiseLike<{ error: unknown }>) => {
       setSyncStatus('syncing')
-      const result = await promise
-      setSyncStatus(result.error ? 'error' : 'synced')
+      const result = await run()
+      if (result.error) {
+        console.error(result.error)
+        lastFailedRunRef.current = run
+        setSyncStatus('error')
+      } else {
+        lastFailedRunRef.current = null
+        setSyncStatus('synced')
+      }
     },
     []
   )
+
+  // 直前に失敗した保存処理をやり直す
+  const retrySync = useCallback(async () => {
+    const run = lastFailedRunRef.current
+    if (run) await withSyncStatus(run)
+  }, [withSyncStatus])
 
   // メンバーを追加
   const addMember = useCallback(
     async (member: Omit<FamilyMember, 'id' | 'createdAt'>) => {
       const treeId = treeIdRef.current
       if (!treeId) return
-      await withSyncStatus(
+      await withSyncStatus(() =>
         supabase.from('family_members').insert({
           tree_id: treeId,
           last_name: member.lastName,
@@ -284,7 +340,7 @@ export function useFamilyTree() {
       if (updates.photo !== undefined) dbUpdates.photo = updates.photo || null
       if (updates.notes !== undefined) dbUpdates.notes = updates.notes || null
 
-      await withSyncStatus(supabase.from('family_members').update(dbUpdates).eq('id', id))
+      await withSyncStatus(() => supabase.from('family_members').update(dbUpdates).eq('id', id))
     },
     [supabase, withSyncStatus]
   )
@@ -294,7 +350,7 @@ export function useFamilyTree() {
   // 自動的に連動削除される
   const deleteMember = useCallback(
     async (id: string) => {
-      await withSyncStatus(supabase.from('family_members').delete().eq('id', id))
+      await withSyncStatus(() => supabase.from('family_members').delete().eq('id', id))
     },
     [supabase, withSyncStatus]
   )
@@ -304,7 +360,7 @@ export function useFamilyTree() {
     async (spouse1Id: string, spouse2Id: string, marriageDate?: string) => {
       const treeId = treeIdRef.current
       if (!treeId) return
-      await withSyncStatus(
+      await withSyncStatus(() =>
         supabase.from('marriages').insert({
           tree_id: treeId,
           spouse1_id: spouse1Id,
@@ -319,7 +375,7 @@ export function useFamilyTree() {
   // 婚姻日を更新
   const updateMarriage = useCallback(
     async (id: string, marriageDate: string) => {
-      await withSyncStatus(
+      await withSyncStatus(() =>
         supabase.from('marriages').update({ marriage_date: marriageDate || null }).eq('id', id)
       )
     },
@@ -329,7 +385,7 @@ export function useFamilyTree() {
   // 婚姻関係を削除
   const removeMarriage = useCallback(
     async (id: string) => {
-      await withSyncStatus(supabase.from('marriages').delete().eq('id', id))
+      await withSyncStatus(() => supabase.from('marriages').delete().eq('id', id))
     },
     [supabase, withSyncStatus]
   )
@@ -362,7 +418,7 @@ export function useFamilyTree() {
 
       if (newRelations.length === 0) return
 
-      await withSyncStatus(
+      await withSyncStatus(() =>
         supabase.from('parent_child_relations').upsert(
           newRelations.map((r) => ({
             tree_id: treeId,
@@ -381,7 +437,7 @@ export function useFamilyTree() {
     async (parentId: string, childId: string) => {
       const treeId = treeIdRef.current
       if (!treeId) return
-      await withSyncStatus(
+      await withSyncStatus(() =>
         supabase
           .from('parent_child_relations')
           .delete()
@@ -391,14 +447,6 @@ export function useFamilyTree() {
       )
     },
     [supabase, withSyncStatus]
-  )
-
-  // IDでメンバーを取得
-  const getMember = useCallback(
-    (id: string) => {
-      return tree?.members.find((m) => m.id === id)
-    },
-    [tree]
   )
 
   // JSONエクスポートされたデータで現在のツリーを置き換える（インポート）。
@@ -519,9 +567,9 @@ export function useFamilyTree() {
     removeMarriage,
     addParentChild,
     removeParentChild,
-    getMember,
     importTree,
     selfMemberId,
     setSelfMember,
+    retrySync,
   }
 }

@@ -44,6 +44,7 @@ export default function FamilyTreeApp() {
     importTree,
     selfMemberId,
     setSelfMember,
+    retrySync,
   } = useFamilyTree()
   const { confirm, dialog } = useConfirm()
   const [activeTab, setActiveTab] = useState<TabId>('members')
@@ -146,6 +147,8 @@ export default function FamilyTreeApp() {
               <SectionHeading>メンバー一覧（{tree.members.length}人）</SectionHeading>
               <MemberList
                 members={tree.members}
+                marriages={tree.marriages}
+                parentChildRelations={tree.parentChildRelations}
                 onUpdate={updateMember}
                 onDelete={deleteMember}
                 selfMemberId={selfMemberId}
@@ -236,7 +239,12 @@ export default function FamilyTreeApp() {
           {syncStatus === 'syncing' && <Alert tone="info">同期中...</Alert>}
           {syncStatus === 'synced' && <Alert tone="success">同期済み</Alert>}
           {syncStatus === 'error' && (
-            <Alert>同期に失敗しました。もう一度お試しください</Alert>
+            <>
+              <Alert>保存に失敗しました</Alert>
+              <Button variant="subtle" size="sm" onClick={retrySync}>
+                再試行
+              </Button>
+            </>
           )}
         </div>
       </main>
