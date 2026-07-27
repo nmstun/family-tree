@@ -61,6 +61,9 @@ npm run dev
 # 型チェック
 npm run type-check
 
+# テスト（家系図レイアウトの回帰テスト。過去に起きた表示崩れを条件として固定してある）
+npm test
+
 # ビルド
 npm run build
 

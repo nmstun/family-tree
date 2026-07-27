@@ -4,7 +4,16 @@ import { useMemo, useState } from 'react'
 import { FamilyMember, Marriage, ParentChildRelation } from '@/types'
 import { wouldCreateCycle } from '@/utils/familyTreeValidation'
 import { sortMembersByName } from '@/utils/sortMembers'
-import { Alert, Button, Card, EmptyState, Field, useConfirm, CONTROL_CLASS } from './ui'
+import {
+  Alert,
+  Button,
+  Card,
+  EmptyState,
+  Field,
+  useConfirm,
+  CONTROL_CLASS,
+  CONTROL_SM_CLASS,
+} from './ui'
 
 interface RelationshipManagerProps {
   members: FamilyMember[]
@@ -212,7 +221,7 @@ export default function RelationshipManager({
                     value={editMarriageDate}
                     onChange={(e) => setEditMarriageDate(e.target.value)}
                     aria-label="結婚日"
-                    className="px-2 py-1 border border-gray-300 rounded text-xs outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                    className={CONTROL_SM_CLASS}
                   />
                 ) : (
                   m.marriageDate && (

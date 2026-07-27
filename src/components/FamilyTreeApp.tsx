@@ -103,7 +103,9 @@ export default function FamilyTreeApp() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
       <header className="bg-white shadow">
-        <div className="max-w-6xl mx-auto px-3 md:px-4 py-4 md:py-6 flex items-start justify-between gap-3">
+        {/* 右上には layout.tsx がバージョン表記を固定表示している。
+            狭い画面でログアウトと重なるため、上側に余白を足して逃がす */}
+        <div className="max-w-6xl mx-auto px-3 md:px-4 pt-7 pb-4 md:py-6 flex items-start justify-between gap-3">
           <div>
             <h1 className="text-xl md:text-3xl font-bold text-gray-900">{tree.name}</h1>
             <p className="text-xs md:text-base text-gray-600 mt-1">あなたの家系図を整理します</p>

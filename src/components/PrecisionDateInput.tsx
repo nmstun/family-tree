@@ -1,7 +1,7 @@
 'use client'
 
 import { DatePrecision } from '@/types'
-import { Field, CONTROL_CLASS } from './ui'
+import { Field, CONTROL_CLASS, CONTROL_SM_CLASS } from './ui'
 
 interface PrecisionDateInputProps {
   label: string
@@ -33,7 +33,7 @@ export default function PrecisionDateInput({
           value={precision}
           onChange={(e) => onPrecisionChange(e.target.value as DatePrecision)}
           aria-label={`${label}の精度`}
-          className="text-xs border border-gray-300 rounded px-2 py-1 outline-none focus:ring-2 focus:ring-indigo-500"
+          className={CONTROL_SM_CLASS}
         >
           <option value="day">年月日</option>
           <option value="month">年月</option>

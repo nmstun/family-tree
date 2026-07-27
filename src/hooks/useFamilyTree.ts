@@ -76,6 +76,10 @@ function mapRelation(row: RelationRow): ParentChildRelation {
   return { parentId: row.parent_id, childId: row.child_id }
 }
 
+// Realtimeの連続イベントをまとめる待ち時間。
+// 体感で遅れを感じない範囲で、一括操作のイベントを吸収できる長さにする。
+const REFETCH_DEBOUNCE_MS = 300
+
 export function useFamilyTree() {
   const supabase = createClient()
   const [tree, setTree] = useState<FamilyTree | null>(null)
@@ -83,6 +87,7 @@ export function useFamilyTree() {
   const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'synced' | 'error'>('idle')
   const [selfMemberId, setSelfMemberId] = useState<string | null>(null)
   const treeIdRef = useRef<string | null>(null)
+  const refetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // 現在のツリーの最新データを Supabase から取得し直す
   // （自分の操作・他のユーザーの操作、どちらの後にも呼ばれる）
@@ -114,6 +119,22 @@ export function useFamilyTree() {
       })
     },
     [supabase]
+  )
+
+  // Realtime は変更された「行ごと」にイベントが飛んでくる。
+  // 1行ごとに全件取り直していたため、まとめて追加したときやインポート時に
+  // 行数ぶんのフル再取得が走っていた（5行の一括INSERTで5回発生することを実測）。
+  // 写真をbase64でDBに持っている都合で1回あたりの転送量が大きいため、
+  // 短時間に連続したイベントは1回にまとめてから取り直す。
+  const scheduleRefetch = useCallback(
+    (treeId: string) => {
+      if (refetchTimerRef.current) clearTimeout(refetchTimerRef.current)
+      refetchTimerRef.current = setTimeout(() => {
+        refetchTimerRef.current = null
+        refetchTree(treeId)
+      }, REFETCH_DEBOUNCE_MS)
+    },
+    [refetchTree]
   )
 
   // 現在ログイン中のユーザーが「自分」として設定しているメンバーを取得し直す
@@ -184,12 +205,12 @@ export function useFamilyTree() {
         .on(
           'postgres_changes',
           { event: '*', schema: 'public', table: 'family_members', filter: `tree_id=eq.${treeId}` },
-          () => refetchTree(treeId!)
+          () => scheduleRefetch(treeId!)
         )
         .on(
           'postgres_changes',
           { event: '*', schema: 'public', table: 'marriages', filter: `tree_id=eq.${treeId}` },
-          () => refetchTree(treeId!)
+          () => scheduleRefetch(treeId!)
         )
         .on(
           'postgres_changes',
@@ -199,7 +220,7 @@ export function useFamilyTree() {
             table: 'parent_child_relations',
             filter: `tree_id=eq.${treeId}`,
           },
-          () => refetchTree(treeId!)
+          () => scheduleRefetch(treeId!)
         )
         .subscribe()
 
@@ -210,9 +231,10 @@ export function useFamilyTree() {
 
     return () => {
       cancelled = true
+      if (refetchTimerRef.current) clearTimeout(refetchTimerRef.current)
       if (channel) supabase.removeChannel(channel)
     }
-  }, [supabase, refetchTree, refetchSelfMember])
+  }, [supabase, refetchTree, refetchSelfMember, scheduleRefetch])
 
   const withSyncStatus = useCallback(
     async (promise: PromiseLike<{ error: unknown }>) => {
