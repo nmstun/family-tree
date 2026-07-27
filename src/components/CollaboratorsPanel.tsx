@@ -2,53 +2,58 @@
 
 import { useState } from 'react'
 import { useTreeCollaborators } from '@/hooks/useTreeCollaborators'
+import { Alert, Button, Card, useConfirm, CONTROL_CLASS } from './ui'
 
 interface CollaboratorsPanelProps {
   treeId: string
 }
 
+type Feedback = { tone: 'success' | 'error'; text: string }
+
 export default function CollaboratorsPanel({ treeId }: CollaboratorsPanelProps) {
   const { collaborators, myRole, loading, inviting, error, invite, resendInvite, remove } =
     useTreeCollaborators(treeId)
+  const { confirm, dialog } = useConfirm()
   const [email, setEmail] = useState('')
-  const [inviteMessage, setInviteMessage] = useState<
-    { type: 'success' | 'error'; text: string } | null
-  >(null)
+  const [inviteFeedback, setInviteFeedback] = useState<Feedback | null>(null)
   const [resendingEmail, setResendingEmail] = useState<string | null>(null)
-  const [resendMessage, setResendMessage] = useState<
-    { email: string; type: 'success' | 'error'; text: string } | null
-  >(null)
+  const [resendFeedback, setResendFeedback] = useState<(Feedback & { email: string }) | null>(null)
 
   const isOwner = myRole === 'owner'
 
   const handleInvite = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!email.trim()) return
-    setInviteMessage(null)
+    setInviteFeedback(null)
     const { error: inviteError } = await invite(email)
-    if (inviteError) {
-      setInviteMessage({ type: 'error', text: inviteError })
-    } else {
-      setInviteMessage({ type: 'success', text: `${email} を招待しました` })
-      setEmail('')
-    }
+    setInviteFeedback(
+      inviteError
+        ? { tone: 'error', text: inviteError }
+        : { tone: 'success', text: `${email} を招待しました` }
+    )
+    if (!inviteError) setEmail('')
   }
 
   const handleResend = async (memberEmail: string) => {
     setResendingEmail(memberEmail)
-    setResendMessage(null)
+    setResendFeedback(null)
     const { error: resendError } = await resendInvite(memberEmail)
     setResendingEmail(null)
-    setResendMessage(
-      resendError
-        ? { email: memberEmail, type: 'error', text: resendError }
-        : { email: memberEmail, type: 'success', text: '招待メールを再送信しました' }
-    )
+    setResendFeedback({
+      email: memberEmail,
+      tone: resendError ? 'error' : 'success',
+      text: resendError ?? '招待メールを再送信しました',
+    })
   }
 
   const handleRemove = async (userId: string, memberEmail: string) => {
-    if (!confirm(`${memberEmail} をこの家系図から削除しますか？`)) return
-    await remove(userId)
+    const ok = await confirm({
+      title: '共同編集者を削除しますか？',
+      message: `${memberEmail} はこの家系図を閲覧・編集できなくなります。`,
+      confirmLabel: '削除する',
+      destructive: true,
+    })
+    if (ok) await remove(userId)
   }
 
   if (loading) {
@@ -58,10 +63,8 @@ export default function CollaboratorsPanel({ treeId }: CollaboratorsPanelProps) 
   return (
     <div className="space-y-6">
       {isOwner && (
-        <div>
-          <h3 className="text-base md:text-lg font-bold text-gray-900 mb-2">
-            共同編集者を招待
-          </h3>
+        <section>
+          <h3 className="text-base md:text-lg font-bold text-gray-900 mb-2">共同編集者を招待</h3>
           <p className="text-xs md:text-sm text-gray-600 mb-3">
             まだこのアプリを使ったことがない相手でも招待できます。招待メールが届き、そこからログインするとすぐに編集を始められます。
           </p>
@@ -72,37 +75,29 @@ export default function CollaboratorsPanel({ treeId }: CollaboratorsPanelProps) 
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="invite@example.com"
-              className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none text-sm"
+              aria-label="招待する相手のメールアドレス"
+              className={CONTROL_CLASS}
             />
-            <button
-              type="submit"
-              disabled={inviting}
-              className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition text-sm disabled:opacity-50 whitespace-nowrap"
-            >
+            <Button type="submit" disabled={inviting} className="whitespace-nowrap">
               {inviting ? '招待中...' : '招待する'}
-            </button>
+            </Button>
           </form>
-          {inviteMessage && (
-            <p
-              className={`text-xs md:text-sm mt-2 ${
-                inviteMessage.type === 'error' ? 'text-red-600' : 'text-green-600'
-              }`}
-            >
-              {inviteMessage.type === 'error' ? '⚠ ' : '✓ '}
-              {inviteMessage.text}
-            </p>
+          {inviteFeedback && (
+            <Alert tone={inviteFeedback.tone} className="mt-2">
+              {inviteFeedback.text}
+            </Alert>
           )}
-        </div>
+        </section>
       )}
 
-      <div>
+      <section>
         <h3 className="text-base md:text-lg font-bold text-gray-900 mb-2">
           メンバー一覧（{collaborators.length}人）
         </h3>
-        {error && <p className="text-xs md:text-sm text-red-600 mb-2">⚠ {error}</p>}
-        <ul className="divide-y divide-gray-200 bg-white rounded-lg border border-gray-200">
+        {error && <Alert className="mb-2">{error}</Alert>}
+        <Card padding="none" className="divide-y divide-gray-100">
           {collaborators.map((c) => (
-            <li key={c.userId} className="px-3 md:px-4 py-2 md:py-3">
+            <div key={c.userId} className="px-3 md:px-4 py-2 md:py-3">
               <div className="flex items-center justify-between gap-2">
                 <div className="min-w-0">
                   <p className="text-sm md:text-base text-gray-900 truncate">
@@ -124,38 +119,37 @@ export default function CollaboratorsPanel({ treeId }: CollaboratorsPanelProps) 
                 </div>
                 <div className="flex-shrink-0 flex items-center gap-2">
                   {isOwner && !c.hasLoggedIn && (
-                    <button
+                    <Button
+                      variant="subtle"
+                      size="sm"
                       onClick={() => handleResend(c.email)}
                       disabled={resendingEmail === c.email}
-                      className="text-xs md:text-sm text-indigo-600 hover:text-indigo-700 transition whitespace-nowrap disabled:opacity-50"
                     >
                       {resendingEmail === c.email ? '送信中...' : '再送信'}
-                    </button>
+                    </Button>
                   )}
                   {isOwner && c.role === 'editor' && (
-                    <button
+                    <Button
+                      variant="danger"
+                      size="sm"
                       onClick={() => handleRemove(c.userId, c.email)}
-                      className="text-xs md:text-sm text-red-600 hover:text-red-700 transition whitespace-nowrap"
                     >
                       削除
-                    </button>
+                    </Button>
                   )}
                 </div>
               </div>
-              {resendMessage && resendMessage.email === c.email && (
-                <p
-                  className={`text-xs mt-1 ${
-                    resendMessage.type === 'error' ? 'text-red-600' : 'text-green-600'
-                  }`}
-                >
-                  {resendMessage.type === 'error' ? '⚠ ' : '✓ '}
-                  {resendMessage.text}
-                </p>
+              {resendFeedback?.email === c.email && (
+                <Alert tone={resendFeedback.tone} className="mt-1">
+                  {resendFeedback.text}
+                </Alert>
               )}
-            </li>
+            </div>
           ))}
-        </ul>
-      </div>
+        </Card>
+      </section>
+
+      {dialog}
     </div>
   )
 }

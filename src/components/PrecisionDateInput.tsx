@@ -1,6 +1,7 @@
 'use client'
 
 import { DatePrecision } from '@/types'
+import { Field, CONTROL_CLASS } from './ui'
 
 interface PrecisionDateInputProps {
   label: string
@@ -8,6 +9,13 @@ interface PrecisionDateInputProps {
   value: string
   onPrecisionChange: (precision: DatePrecision) => void
   onValueChange: (value: string) => void
+}
+
+// 精度によって使う input の type だけが変わるので、対応表で切り替える
+const INPUT_TYPE: Record<DatePrecision, string> = {
+  day: 'date',
+  month: 'month',
+  year: 'number',
 }
 
 export default function PrecisionDateInput({
@@ -18,45 +26,29 @@ export default function PrecisionDateInput({
   onValueChange,
 }: PrecisionDateInputProps) {
   return (
-    <div className="mb-4">
-      <div className="flex items-center justify-between mb-1 md:mb-2">
-        <label className="block text-sm font-medium text-gray-700">{label}</label>
+    <Field
+      label={label}
+      action={
         <select
           value={precision}
           onChange={(e) => onPrecisionChange(e.target.value as DatePrecision)}
+          aria-label={`${label}の精度`}
           className="text-xs border border-gray-300 rounded px-2 py-1 outline-none focus:ring-2 focus:ring-indigo-500"
         >
           <option value="day">年月日</option>
           <option value="month">年月</option>
           <option value="year">年のみ</option>
         </select>
-      </div>
-      {precision === 'day' && (
-        <input
-          type="date"
-          value={value}
-          onChange={(e) => onValueChange(e.target.value)}
-          className="w-full px-3 md:px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none text-sm md:text-base"
-        />
-      )}
-      {precision === 'month' && (
-        <input
-          type="month"
-          value={value}
-          onChange={(e) => onValueChange(e.target.value)}
-          className="w-full px-3 md:px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none text-sm md:text-base"
-        />
-      )}
-      {precision === 'year' && (
-        <input
-          type="number"
-          inputMode="numeric"
-          placeholder="1850"
-          value={value}
-          onChange={(e) => onValueChange(e.target.value)}
-          className="w-full px-3 md:px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none text-sm md:text-base"
-        />
-      )}
-    </div>
+      }
+    >
+      <input
+        type={INPUT_TYPE[precision]}
+        inputMode={precision === 'year' ? 'numeric' : undefined}
+        placeholder={precision === 'year' ? '1850' : undefined}
+        value={value}
+        onChange={(e) => onValueChange(e.target.value)}
+        className={CONTROL_CLASS}
+      />
+    </Field>
   )
 }

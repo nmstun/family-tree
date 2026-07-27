@@ -21,7 +21,7 @@
 
 - **フロントエンド**: Next.js 14 (App Router) + React 18
 - **言語**: TypeScript
-- **スタイリング**: Tailwind CSS
+- **スタイリング**: Tailwind CSS（ボタン・入力欄・カードなどの見た目は `src/components/ui/` の共通部品に集約）
 - **バックエンド**: Supabase（Auth / Postgres / Realtime）
 - **ホスティング**: Vercel
 
@@ -101,6 +101,7 @@ family-tree-app/
 ├── middleware.ts                 # 未ログインユーザーのリダイレクト・セッション更新
 ├── src/
 │   ├── components/
+│   │   ├── ui/                   # 共通UI部品（Button/Card/Field/Alert/Modal/確認ダイアログ）
 │   │   ├── FamilyTreeApp.tsx     # アプリ全体のレイアウト・タブ切り替え
 │   │   ├── MemberForm.tsx        # メンバーの追加・編集フォーム
 │   │   ├── MemberList.tsx        # メンバー一覧・編集・削除

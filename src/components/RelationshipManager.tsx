@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react'
 import { FamilyMember, Marriage, ParentChildRelation } from '@/types'
 import { wouldCreateCycle } from '@/utils/familyTreeValidation'
 import { sortMembersByName } from '@/utils/sortMembers'
+import { Alert, Button, Card, EmptyState, Field, useConfirm, CONTROL_CLASS } from './ui'
 
 interface RelationshipManagerProps {
   members: FamilyMember[]
@@ -21,6 +22,40 @@ function displayName(member?: FamilyMember) {
   return `${member.lastName} ${member.firstName}`
 }
 
+// 入力チェックは副作用を持たない関数に切り出しておく。
+// 呼び出し側はエラー文言（問題なければ null）を受け取って画面に出すだけにする。
+function validateMarriage(
+  spouse1: string,
+  spouse2: string,
+  marriages: Marriage[]
+): string | null {
+  if (!spouse1 || !spouse2) return '配偶者を2人選択してください'
+  if (spouse1 === spouse2) return '同じメンバー同士は結婚関係にできません'
+  const alreadyMarried = marriages.some(
+    (m) =>
+      (m.spouse1Id === spouse1 && m.spouse2Id === spouse2) ||
+      (m.spouse1Id === spouse2 && m.spouse2Id === spouse1)
+  )
+  if (alreadyMarried) return 'すでに配偶者関係が設定されています'
+  return null
+}
+
+function validateParentChild(
+  parentId: string,
+  childId: string,
+  relations: ParentChildRelation[]
+): string | null {
+  if (!parentId || !childId) return '親と子を選択してください'
+  if (parentId === childId) return '同じメンバーを親子関係にはできません'
+  if (relations.some((r) => r.parentId === parentId && r.childId === childId)) {
+    return 'すでにこの親子関係が設定されています'
+  }
+  if (wouldCreateCycle(parentId, childId, relations)) {
+    return 'この関係を設定すると家系図が循環してしまうため、設定できません'
+  }
+  return null
+}
+
 export default function RelationshipManager({
   members,
   marriages,
@@ -32,37 +67,26 @@ export default function RelationshipManager({
   onRemoveParentChild,
 }: RelationshipManagerProps) {
   const memberMap = useMemo(() => new Map(members.map((m) => [m.id, m])), [members])
+  const { confirm, dialog } = useConfirm()
 
   const [spouse1, setSpouse1] = useState('')
   const [spouse2, setSpouse2] = useState('')
   const [marriageDate, setMarriageDate] = useState('')
+  const [marriageError, setMarriageError] = useState<string | null>(null)
 
   const [editingMarriageId, setEditingMarriageId] = useState<string | null>(null)
   const [editMarriageDate, setEditMarriageDate] = useState('')
 
   const [parentId, setParentId] = useState('')
   const [childId, setChildId] = useState('')
+  const [relationError, setRelationError] = useState<string | null>(null)
 
   const sortedMembers = useMemo(() => sortMembersByName(members), [members])
 
   const handleAddMarriage = () => {
-    if (!spouse1 || !spouse2) {
-      alert('配偶者を2人選択してください')
-      return
-    }
-    if (spouse1 === spouse2) {
-      alert('同じメンバー同士は結婚関係にできません')
-      return
-    }
-    const alreadyMarried = marriages.some(
-      (m) =>
-        (m.spouse1Id === spouse1 && m.spouse2Id === spouse2) ||
-        (m.spouse1Id === spouse2 && m.spouse2Id === spouse1)
-    )
-    if (alreadyMarried) {
-      alert('すでに配偶者関係が設定されています')
-      return
-    }
+    const error = validateMarriage(spouse1, spouse2, marriages)
+    setMarriageError(error)
+    if (error) return
 
     onAddMarriage(spouse1, spouse2, marriageDate || undefined)
     setSpouse1('')
@@ -71,29 +95,37 @@ export default function RelationshipManager({
   }
 
   const handleAddParentChild = () => {
-    if (!parentId || !childId) {
-      alert('親と子を選択してください')
-      return
-    }
-    if (parentId === childId) {
-      alert('同じメンバーを親子関係にはできません')
-      return
-    }
-    const alreadyExists = parentChildRelations.some(
-      (r) => r.parentId === parentId && r.childId === childId
-    )
-    if (alreadyExists) {
-      alert('すでにこの親子関係が設定されています')
-      return
-    }
-    if (wouldCreateCycle(parentId, childId, parentChildRelations)) {
-      alert('この関係を設定すると家系図が循環してしまうため、設定できません')
-      return
-    }
+    const error = validateParentChild(parentId, childId, parentChildRelations)
+    setRelationError(error)
+    if (error) return
 
     onAddParentChild(parentId, childId)
     setParentId('')
     setChildId('')
+  }
+
+  const handleRemoveMarriage = async (m: Marriage) => {
+    const ok = await confirm({
+      title: '配偶者関係を削除しますか？',
+      message: `${displayName(memberMap.get(m.spouse1Id))} と ${displayName(
+        memberMap.get(m.spouse2Id)
+      )} の配偶者関係を削除します。`,
+      confirmLabel: '削除する',
+      destructive: true,
+    })
+    if (ok) onRemoveMarriage(m.id)
+  }
+
+  const handleRemoveParentChild = async (r: ParentChildRelation) => {
+    const ok = await confirm({
+      title: '親子関係を削除しますか？',
+      message: `${displayName(memberMap.get(r.parentId))} と ${displayName(
+        memberMap.get(r.childId)
+      )} の親子関係を削除します。`,
+      confirmLabel: '削除する',
+      destructive: true,
+    })
+    if (ok) onRemoveParentChild(r.parentId, r.childId)
   }
 
   const memberOptions = (excludeId?: string) =>
@@ -107,82 +139,80 @@ export default function RelationshipManager({
 
   if (members.length < 2) {
     return (
-      <div className="bg-white rounded-lg shadow p-4 md:p-6 text-center text-gray-500 text-sm md:text-base">
+      <EmptyState>
         関係を設定するには、まず「メンバー」タブで2人以上のメンバーを追加してください
-      </div>
+      </EmptyState>
     )
   }
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-8">
-      {/* Marriage relationships */}
-      <div>
+      {/* 配偶者関係 */}
+      <section>
         <h3 className="text-base md:text-lg font-bold text-gray-900 mb-2 md:mb-3">💍 配偶者関係</h3>
-        <div className="bg-white rounded-lg shadow p-4 md:p-6 mb-3 md:mb-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
-            <div>
-              <label className="block text-xs md:text-sm font-medium text-gray-700 mb-1">配偶者A</label>
+        <Card className="mb-3 md:mb-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Field label="配偶者A" htmlFor="spouse1">
               <select
+                id="spouse1"
                 value={spouse1}
                 onChange={(e) => setSpouse1(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none text-sm"
+                className={CONTROL_CLASS}
               >
                 <option value="">選択してください</option>
                 {memberOptions(spouse2)}
               </select>
-            </div>
-            <div>
-              <label className="block text-xs md:text-sm font-medium text-gray-700 mb-1">配偶者B</label>
+            </Field>
+            <Field label="配偶者B" htmlFor="spouse2">
               <select
+                id="spouse2"
                 value={spouse2}
                 onChange={(e) => setSpouse2(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none text-sm"
+                className={CONTROL_CLASS}
               >
                 <option value="">選択してください</option>
                 {memberOptions(spouse1)}
               </select>
-            </div>
+            </Field>
           </div>
-          <div className="mb-3">
-            <label className="block text-xs md:text-sm font-medium text-gray-700 mb-1">
-              結婚日（任意）
-            </label>
+          <Field label="結婚日（任意）" htmlFor="marriage-date">
             <input
+              id="marriage-date"
               type="date"
               value={marriageDate}
               onChange={(e) => setMarriageDate(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none text-sm"
+              className={CONTROL_CLASS}
             />
-          </div>
-          <button
-            onClick={handleAddMarriage}
-            className="w-full bg-indigo-600 text-white py-2 rounded-lg hover:bg-indigo-700 transition font-medium text-sm"
-          >
+          </Field>
+          {marriageError && <Alert className="mb-3">{marriageError}</Alert>}
+          <Button fullWidth onClick={handleAddMarriage}>
             配偶者関係を追加
-          </button>
-        </div>
+          </Button>
+        </Card>
 
         <div className="space-y-2">
           {marriages.length === 0 && (
-            <div className="text-xs md:text-sm text-gray-500 text-center py-2">
-              配偶者関係はまだ設定されていません
-            </div>
+            <EmptyState variant="inline">配偶者関係はまだ設定されていません</EmptyState>
           )}
           {marriages.map((m) => (
-            <div
+            <Card
               key={m.id}
-              className="bg-white rounded-lg shadow p-3 flex items-center justify-between gap-2 flex-wrap"
+              padding="row"
+              className="flex items-center justify-between gap-2 flex-wrap"
             >
               <div className="text-sm text-gray-800 min-w-0 flex items-center gap-2 flex-wrap">
                 <span className="font-medium">{displayName(memberMap.get(m.spouse1Id))}</span>
-                <span className="text-gray-400">⚭</span>
+                <span className="text-gray-400" aria-hidden>
+                  ⚭
+                </span>
                 <span className="font-medium">{displayName(memberMap.get(m.spouse2Id))}</span>
                 {editingMarriageId === m.id ? (
                   <input
                     type="date"
                     value={editMarriageDate}
                     onChange={(e) => setEditMarriageDate(e.target.value)}
-                    className="px-2 py-1 border border-gray-300 rounded text-xs focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none"
+                    aria-label="結婚日"
+                    className="px-2 py-1 border border-gray-300 rounded text-xs outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                   />
                 ) : (
                   m.marriageDate && (
@@ -195,109 +225,114 @@ export default function RelationshipManager({
               <div className="flex-shrink-0 flex gap-2">
                 {editingMarriageId === m.id ? (
                   <>
-                    <button
+                    <Button
+                      variant="subtle"
+                      size="sm"
                       onClick={() => {
                         onUpdateMarriage(m.id, editMarriageDate)
                         setEditingMarriageId(null)
                       }}
-                      className="px-3 py-1 text-xs bg-indigo-100 text-indigo-700 rounded hover:bg-indigo-200 transition"
                     >
                       保存
-                    </button>
-                    <button
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      size="sm"
                       onClick={() => setEditingMarriageId(null)}
-                      className="px-3 py-1 text-xs border border-gray-300 text-gray-700 rounded hover:bg-gray-50 transition"
                     >
                       キャンセル
-                    </button>
+                    </Button>
                   </>
                 ) : (
                   <>
-                    <button
+                    <Button
+                      variant="subtle"
+                      size="sm"
                       onClick={() => {
                         setEditingMarriageId(m.id)
                         setEditMarriageDate(m.marriageDate ?? '')
                       }}
-                      className="px-3 py-1 text-xs bg-indigo-100 text-indigo-700 rounded hover:bg-indigo-200 transition"
                     >
                       編集
-                    </button>
-                    <button
-                      onClick={() => onRemoveMarriage(m.id)}
-                      className="px-3 py-1 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200 transition"
-                    >
+                    </Button>
+                    <Button variant="danger" size="sm" onClick={() => handleRemoveMarriage(m)}>
                       削除
-                    </button>
+                    </Button>
                   </>
                 )}
               </div>
-            </div>
+            </Card>
           ))}
         </div>
-      </div>
+      </section>
 
-      {/* Parent-child relationships */}
-      <div>
-        <h3 className="text-base md:text-lg font-bold text-gray-900 mb-2 md:mb-3">👨‍👩‍👧 親子関係</h3>
-        <div className="bg-white rounded-lg shadow p-4 md:p-6 mb-3 md:mb-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
-            <div>
-              <label className="block text-xs md:text-sm font-medium text-gray-700 mb-1">親</label>
+      {/* 親子関係 */}
+      <section>
+        <h3 className="text-base md:text-lg font-bold text-gray-900 mb-2 md:mb-3">
+          👨‍👩‍👧 親子関係
+        </h3>
+        <Card className="mb-3 md:mb-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Field label="親" htmlFor="parent">
               <select
+                id="parent"
                 value={parentId}
                 onChange={(e) => setParentId(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none text-sm"
+                className={CONTROL_CLASS}
               >
                 <option value="">選択してください</option>
                 {memberOptions(childId)}
               </select>
-            </div>
-            <div>
-              <label className="block text-xs md:text-sm font-medium text-gray-700 mb-1">子</label>
+            </Field>
+            <Field label="子" htmlFor="child">
               <select
+                id="child"
                 value={childId}
                 onChange={(e) => setChildId(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none text-sm"
+                className={CONTROL_CLASS}
               >
                 <option value="">選択してください</option>
                 {memberOptions(parentId)}
               </select>
-            </div>
+            </Field>
           </div>
-          <button
-            onClick={handleAddParentChild}
-            className="w-full bg-indigo-600 text-white py-2 rounded-lg hover:bg-indigo-700 transition font-medium text-sm"
-          >
+          {relationError && <Alert className="mb-3">{relationError}</Alert>}
+          <Button fullWidth onClick={handleAddParentChild}>
             親子関係を追加
-          </button>
-        </div>
+          </Button>
+        </Card>
 
         <div className="space-y-2">
           {parentChildRelations.length === 0 && (
-            <div className="text-xs md:text-sm text-gray-500 text-center py-2">
-              親子関係はまだ設定されていません
-            </div>
+            <EmptyState variant="inline">親子関係はまだ設定されていません</EmptyState>
           )}
           {parentChildRelations.map((r) => (
-            <div
+            <Card
               key={`${r.parentId}-${r.childId}`}
-              className="bg-white rounded-lg shadow p-3 flex items-center justify-between gap-2"
+              padding="row"
+              className="flex items-center justify-between gap-2"
             >
               <div className="text-sm text-gray-800 min-w-0">
                 <span className="font-medium">{displayName(memberMap.get(r.parentId))}</span>
-                <span className="mx-1.5 text-gray-400">→</span>
+                <span className="mx-1.5 text-gray-400" aria-hidden>
+                  →
+                </span>
                 <span className="font-medium">{displayName(memberMap.get(r.childId))}</span>
               </div>
-              <button
-                onClick={() => onRemoveParentChild(r.parentId, r.childId)}
-                className="flex-shrink-0 px-3 py-1 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200 transition"
+              <Button
+                variant="danger"
+                size="sm"
+                className="flex-shrink-0"
+                onClick={() => handleRemoveParentChild(r)}
               >
                 削除
-              </button>
-            </div>
+              </Button>
+            </Card>
           ))}
         </div>
-      </div>
+      </section>
+
+      {dialog}
     </div>
   )
 }

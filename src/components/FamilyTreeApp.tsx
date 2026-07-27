@@ -9,6 +9,24 @@ import RelationshipManager from './RelationshipManager'
 import FamilyTreeView from './FamilyTreeView'
 import SignOutButton from './SignOutButton'
 import CollaboratorsPanel from './CollaboratorsPanel'
+import { Alert, Button, Card, useConfirm, cn } from './ui'
+
+type TabId = 'members' | 'relations' | 'view' | 'share' | 'export'
+
+// タブは以前ほぼ同じ<button>を5回書き並べていたので定義だけを配列にまとめる
+const TABS: { id: TabId; label: string }[] = [
+  { id: 'members', label: '👥 メンバー' },
+  { id: 'relations', label: '🔗 関係' },
+  { id: 'view', label: '🌳 家系図表示' },
+  { id: 'share', label: '🤝 共有' },
+  { id: 'export', label: '📥 エクスポート' },
+]
+
+function SectionHeading({ children }: { children: React.ReactNode }) {
+  return (
+    <h2 className="text-lg md:text-2xl font-bold text-gray-900 mb-3 md:mb-4">{children}</h2>
+  )
+}
 
 export default function FamilyTreeApp() {
   const {
@@ -27,9 +45,8 @@ export default function FamilyTreeApp() {
     selfMemberId,
     setSelfMember,
   } = useFamilyTree()
-  const [activeTab, setActiveTab] = useState<
-    'members' | 'relations' | 'view' | 'share' | 'export'
-  >('members')
+  const { confirm, dialog } = useConfirm()
+  const [activeTab, setActiveTab] = useState<TabId>('members')
   const [importing, setImporting] = useState(false)
   const [importError, setImportError] = useState<string | null>(null)
   const importFileInputRef = useRef<HTMLInputElement>(null)
@@ -56,15 +73,21 @@ export default function FamilyTreeApp() {
     const text = await file.text()
     const data = importJSON(text)
     if (!data) {
-      setImportError('JSONの形式が正しくありません。このアプリからエクスポートしたファイルを選択してください')
+      setImportError(
+        'JSONの形式が正しくありません。このアプリからエクスポートしたファイルを選択してください'
+      )
       return
     }
 
-    const confirmed = window.confirm(
-      `現在の家系図データ（メンバー${tree.members.length}人）はすべて削除され、\n` +
+    const confirmed = await confirm({
+      title: '家系図を置き換えますか？',
+      message:
+        `現在の家系図データ（メンバー${tree.members.length}人）はすべて削除され、\n` +
         `インポートするデータ（メンバー${data.tree.members.length}人）に置き換わります。\n` +
-        `この操作は取り消せません。よろしいですか？`
-    )
+        `この操作は取り消せません。`,
+      confirmLabel: 'インポートする',
+      destructive: true,
+    })
     if (!confirmed) return
 
     setImporting(true)
@@ -79,7 +102,6 @@ export default function FamilyTreeApp() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
-      {/* ヘッダー */}
       <header className="bg-white shadow">
         <div className="max-w-6xl mx-auto px-3 md:px-4 py-4 md:py-6 flex items-start justify-between gap-3">
           <div>
@@ -90,76 +112,36 @@ export default function FamilyTreeApp() {
         </div>
       </header>
 
-      {/* ナビゲーション */}
       <nav className="bg-white border-b border-gray-200 sticky top-0 z-10">
         <div className="max-w-6xl mx-auto px-3 md:px-4 flex gap-2 md:gap-4 overflow-x-auto">
-          <button
-            onClick={() => setActiveTab('members')}
-            className={`px-2 md:px-4 py-2 md:py-3 text-sm md:text-base font-medium border-b-2 transition whitespace-nowrap ${
-              activeTab === 'members'
-                ? 'border-indigo-500 text-indigo-600'
-                : 'border-transparent text-gray-700 hover:text-gray-900'
-            }`}
-          >
-            👥 メンバー
-          </button>
-          <button
-            onClick={() => setActiveTab('relations')}
-            className={`px-2 md:px-4 py-2 md:py-3 text-sm md:text-base font-medium border-b-2 transition whitespace-nowrap ${
-              activeTab === 'relations'
-                ? 'border-indigo-500 text-indigo-600'
-                : 'border-transparent text-gray-700 hover:text-gray-900'
-            }`}
-          >
-            🔗 関係
-          </button>
-          <button
-            onClick={() => setActiveTab('view')}
-            className={`px-2 md:px-4 py-2 md:py-3 text-sm md:text-base font-medium border-b-2 transition whitespace-nowrap ${
-              activeTab === 'view'
-                ? 'border-indigo-500 text-indigo-600'
-                : 'border-transparent text-gray-700 hover:text-gray-900'
-            }`}
-          >
-            🌳 家系図表示
-          </button>
-          <button
-            onClick={() => setActiveTab('share')}
-            className={`px-2 md:px-4 py-2 md:py-3 text-sm md:text-base font-medium border-b-2 transition whitespace-nowrap ${
-              activeTab === 'share'
-                ? 'border-indigo-500 text-indigo-600'
-                : 'border-transparent text-gray-700 hover:text-gray-900'
-            }`}
-          >
-            🤝 共有
-          </button>
-          <button
-            onClick={() => setActiveTab('export')}
-            className={`px-2 md:px-4 py-2 md:py-3 text-sm md:text-base font-medium border-b-2 transition whitespace-nowrap ${
-              activeTab === 'export'
-                ? 'border-indigo-500 text-indigo-600'
-                : 'border-transparent text-gray-700 hover:text-gray-900'
-            }`}
-          >
-            📥 エクスポート
-          </button>
+          {TABS.map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              aria-current={activeTab === tab.id ? 'page' : undefined}
+              className={cn(
+                'px-2 md:px-4 py-2 md:py-3 text-sm md:text-base font-medium border-b-2 transition whitespace-nowrap',
+                'outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 rounded-t',
+                activeTab === tab.id
+                  ? 'border-indigo-500 text-indigo-600'
+                  : 'border-transparent text-gray-700 hover:text-gray-900'
+              )}
+            >
+              {tab.label}
+            </button>
+          ))}
         </div>
       </nav>
 
-      {/* コンテンツ */}
       <main className="max-w-6xl mx-auto px-3 md:px-4 py-4 md:py-8">
         {activeTab === 'members' && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-8">
             <div>
-              <h2 className="text-lg md:text-2xl font-bold text-gray-900 mb-3 md:mb-4">
-                新しいメンバーを追加
-              </h2>
+              <SectionHeading>新しいメンバーを追加</SectionHeading>
               <MemberForm onSubmit={addMember} />
             </div>
             <div>
-              <h2 className="text-lg md:text-2xl font-bold text-gray-900 mb-3 md:mb-4">
-                メンバー一覧（{tree.members.length}人）
-              </h2>
+              <SectionHeading>メンバー一覧（{tree.members.length}人）</SectionHeading>
               <MemberList
                 members={tree.members}
                 onUpdate={updateMember}
@@ -173,9 +155,7 @@ export default function FamilyTreeApp() {
 
         {activeTab === 'relations' && (
           <div>
-            <h2 className="text-lg md:text-2xl font-bold text-gray-900 mb-3 md:mb-4">
-              家族関係の設定
-            </h2>
+            <SectionHeading>家族関係の設定</SectionHeading>
             <RelationshipManager
               members={tree.members}
               marriages={tree.marriages}
@@ -190,10 +170,8 @@ export default function FamilyTreeApp() {
         )}
 
         {activeTab === 'view' && (
-          <div className="bg-white rounded-lg shadow p-4 md:p-6">
-            <h2 className="text-lg md:text-2xl font-bold text-gray-900 mb-3 md:mb-4">
-              家系図表示
-            </h2>
+          <Card>
+            <SectionHeading>家系図表示</SectionHeading>
             <FamilyTreeView
               treeId={tree.id}
               members={tree.members}
@@ -201,39 +179,30 @@ export default function FamilyTreeApp() {
               parentChildRelations={tree.parentChildRelations}
               selfMemberId={selfMemberId}
             />
-          </div>
+          </Card>
         )}
 
         {activeTab === 'share' && (
-          <div className="bg-white rounded-lg shadow p-4 md:p-6">
-            <h2 className="text-lg md:text-2xl font-bold text-gray-900 mb-3 md:mb-4">
-              家系図を共有
-            </h2>
+          <Card>
+            <SectionHeading>家系図を共有</SectionHeading>
             <CollaboratorsPanel treeId={tree.id} />
-          </div>
+          </Card>
         )}
 
         {activeTab === 'export' && (
           <div className="space-y-4 md:space-y-6">
-            <div className="bg-white rounded-lg shadow p-4 md:p-6">
-              <h2 className="text-lg md:text-2xl font-bold text-gray-900 mb-3 md:mb-4">
-                データをエクスポート
-              </h2>
+            <Card>
+              <SectionHeading>データをエクスポート</SectionHeading>
               <p className="text-sm md:text-base text-gray-600 mb-4 md:mb-6">
-                現在の家系図をJSON形式でダウンロードできます。
+                現在の家系図をJSON形式でダウンロードできます。写真を含むすべての情報が含まれます。
               </p>
-              <button
-                onClick={handleExport}
-                className="bg-indigo-600 text-white px-4 md:px-6 py-2 md:py-3 rounded-lg hover:bg-indigo-700 transition text-sm md:text-base"
-              >
+              <Button size="lg" onClick={handleExport}>
                 📥 JSONをダウンロード
-              </button>
-            </div>
+              </Button>
+            </Card>
 
-            <div className="bg-white rounded-lg shadow p-4 md:p-6">
-              <h2 className="text-lg md:text-2xl font-bold text-gray-900 mb-3 md:mb-4">
-                データをインポート
-              </h2>
+            <Card>
+              <SectionHeading>データをインポート</SectionHeading>
               <p className="text-sm md:text-base text-gray-600 mb-4 md:mb-6">
                 このアプリからエクスポートしたJSONファイルを読み込んで復元できます。
                 <br />
@@ -248,35 +217,29 @@ export default function FamilyTreeApp() {
                 onChange={handleImportFileSelected}
                 className="hidden"
               />
-              <button
-                onClick={() => importFileInputRef.current?.click()}
+              <Button
+                variant="outline"
+                size="lg"
                 disabled={importing}
-                className="bg-white text-indigo-600 border border-indigo-600 px-4 md:px-6 py-2 md:py-3 rounded-lg hover:bg-indigo-50 transition text-sm md:text-base disabled:opacity-50"
+                onClick={() => importFileInputRef.current?.click()}
               >
                 {importing ? 'インポート中...' : '📤 JSONを選択してインポート'}
-              </button>
-              {importError && (
-                <p className="text-sm text-red-600 mt-3">⚠ {importError}</p>
-              )}
-            </div>
+              </Button>
+              {importError && <Alert className="mt-3">{importError}</Alert>}
+            </Card>
           </div>
         )}
 
-        {/* 同期ステータス */}
-        <div className="mt-4 md:mt-8 flex items-center gap-2">
-          {syncStatus === 'syncing' && (
-            <span className="text-xs md:text-sm text-gray-500">同期中...</span>
-          )}
-          {syncStatus === 'synced' && (
-            <span className="text-xs md:text-sm text-green-600">✓ 同期済み</span>
-          )}
+        <div className="mt-4 md:mt-8 flex items-center gap-2" aria-live="polite">
+          {syncStatus === 'syncing' && <Alert tone="info">同期中...</Alert>}
+          {syncStatus === 'synced' && <Alert tone="success">同期済み</Alert>}
           {syncStatus === 'error' && (
-            <span className="text-xs md:text-sm text-red-600">
-              ⚠ 同期に失敗しました。もう一度お試しください
-            </span>
+            <Alert>同期に失敗しました。もう一度お試しください</Alert>
           )}
         </div>
       </main>
+
+      {dialog}
     </div>
   )
 }

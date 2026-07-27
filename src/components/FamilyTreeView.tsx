@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { FamilyMember, Marriage, ParentChildRelation } from '@/types'
 import { computeFamilyTreeLayout, NODE_WIDTH, NODE_HEIGHT, V_GAP } from '@/utils/treeLayout'
 import { calculateAge } from '@/utils/age'
+import { Alert, Button, EmptyState } from './ui'
 
 interface FamilyTreeViewProps {
   treeId: string
@@ -15,11 +16,32 @@ interface FamilyTreeViewProps {
 
 const COLLAPSE_STORAGE_PREFIX = 'familyTree:collapsed:'
 
+const MIN_SCALE = 0.6
+const MAX_SCALE = 2
+const SCALE_STEP = 0.1
+
 const GENDER_COLOR: Record<FamilyMember['gender'], { border: string; bg: string }> = {
   male: { border: '#3b82f6', bg: '#eff6ff' },
   female: { border: '#ec4899', bg: '#fdf2f8' },
   other: { border: '#8b5cf6', bg: '#f5f3ff' },
 }
+
+function ColorDot({ color }: { color: string }) {
+  return (
+    <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ backgroundColor: color }} />
+  )
+}
+
+// 凡例は同じ形のチップが並ぶだけなので、見本部分と文言だけを定義にまとめる。
+// GENDER_COLOR を読むため、必ずその宣言より後ろに置く。
+const LEGEND_ITEMS: { label: string; swatch: React.ReactNode }[] = [
+  { label: '男性', swatch: <ColorDot color={GENDER_COLOR.male.border} /> },
+  { label: '女性', swatch: <ColorDot color={GENDER_COLOR.female.border} /> },
+  { label: 'その他', swatch: <ColorDot color={GENDER_COLOR.other.border} /> },
+  { label: '配偶者', swatch: <span className="inline-block w-4 border-t-2 border-gray-400" /> },
+  { label: '親子', swatch: <span className="inline-block w-4 border-t-2 border-gray-300" /> },
+  { label: 'クリックで子孫を折りたたみ', swatch: <span aria-hidden>ー / ＋</span> },
+]
 
 function formatYear(dateStr?: string) {
   if (!dateStr) return ''
@@ -82,6 +104,7 @@ export default function FamilyTreeView({
   const [vertical, setVertical] = useState(true)
   const [copying, setCopying] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [copyError, setCopyError] = useState<string | null>(null)
   const [collapsedRootIds, setCollapsedRootIds] = useState<Set<string>>(() => new Set())
   const containerRef = useRef<HTMLDivElement>(null)
   const svgRef = useRef<SVGSVGElement>(null)
@@ -324,6 +347,7 @@ export default function FamilyTreeView({
   const handleCopyImage = () => {
     if (!svgRef.current || copying) return
     setCopying(true)
+    setCopyError(null)
     navigator.clipboard
       .write([new ClipboardItem({ 'image/png': buildTreePngBlob() })])
       .then(() => {
@@ -332,17 +356,13 @@ export default function FamilyTreeView({
       })
       .catch((err) => {
         console.error(err)
-        alert('画像のコピーに失敗しました')
+        setCopyError('画像のコピーに失敗しました')
       })
       .finally(() => setCopying(false))
   }
 
   if (members.length === 0) {
-    return (
-      <div className="text-center text-gray-500 text-sm md:text-base py-12">
-        メンバーを追加すると、ここに家系図が表示されます
-      </div>
-    )
+    return <EmptyState variant="inline">メンバーを追加すると、ここに家系図が表示されます</EmptyState>
   }
 
   return (
@@ -351,7 +371,7 @@ export default function FamilyTreeView({
       <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
         <div className="inline-flex items-center gap-1 bg-white rounded-full shadow-sm border border-gray-200 p-1">
           <button
-            onClick={() => setScale((s) => Math.max(0.6, +(s - 0.1).toFixed(2)))}
+            onClick={() => setScale((s) => Math.max(MIN_SCALE, +(s - SCALE_STEP).toFixed(2)))}
             className="min-w-[44px] min-h-[44px] md:min-w-[32px] md:min-h-[32px] flex items-center justify-center text-base md:text-sm text-gray-600 hover:bg-gray-100 rounded-full transition"
             aria-label="縮小"
           >
@@ -361,7 +381,7 @@ export default function FamilyTreeView({
             {Math.round(scale * 100)}%
           </span>
           <button
-            onClick={() => setScale((s) => Math.min(2, +(s + 0.1).toFixed(2)))}
+            onClick={() => setScale((s) => Math.min(MAX_SCALE, +(s + SCALE_STEP).toFixed(2)))}
             className="min-w-[44px] min-h-[44px] md:min-w-[32px] md:min-h-[32px] flex items-center justify-center text-base md:text-sm text-gray-600 hover:bg-gray-100 rounded-full transition"
             aria-label="拡大"
           >
@@ -375,74 +395,51 @@ export default function FamilyTreeView({
           </button>
         </div>
 
-        <button
-          onClick={() => setVertical((v) => !v)}
-          className="min-h-[44px] md:min-h-[32px] px-3 inline-flex items-center gap-1.5 text-sm text-gray-600 bg-white hover:bg-gray-100 rounded-full shadow-sm border border-gray-200 transition"
-        >
+        <Button variant="toolbar" onClick={() => setVertical((v) => !v)}>
           <span aria-hidden>{vertical ? '↔️' : '↕️'}</span>
           {vertical ? '横表示' : '縦表示'}
-        </button>
+        </Button>
 
-        <button
-          onClick={handleCopyImage}
-          disabled={copying}
-          className="min-h-[44px] md:min-h-[32px] px-3 inline-flex items-center gap-1.5 text-sm text-gray-600 bg-white hover:bg-gray-100 rounded-full shadow-sm border border-gray-200 transition disabled:opacity-50"
-        >
+        <Button variant="toolbar" onClick={handleCopyImage} disabled={copying}>
           <span aria-hidden>{copied ? '✅' : '📋'}</span>
           {copying ? 'コピー中...' : copied ? 'コピーしました' : '画像をコピー'}
-        </button>
+        </Button>
 
         {selfMemberId && !hiddenMemberIds.has(selfMemberId) && (
-          <button
-            onClick={() => centerOnMember(selfMemberId)}
-            className="min-h-[44px] md:min-h-[32px] px-3 inline-flex items-center gap-1.5 text-sm text-gray-600 bg-white hover:bg-gray-100 rounded-full shadow-sm border border-gray-200 transition"
-          >
+          <Button variant="toolbar" onClick={() => centerOnMember(selfMemberId)}>
             <span aria-hidden>📍</span>
             自分の位置へ
-          </button>
+          </Button>
         )}
 
         {collapsedRootIds.size > 0 && (
-          <button
+          <Button
+            variant="toolbar"
             onClick={() => {
               setCollapsedRootIds(new Set())
               persistCollapsed(new Set())
             }}
-            className="min-h-[44px] md:min-h-[32px] px-3 inline-flex items-center gap-1.5 text-sm text-gray-600 bg-white hover:bg-gray-100 rounded-full shadow-sm border border-gray-200 transition"
           >
             <span aria-hidden>⊕</span>
             すべて展開（{collapsedRootIds.size}）
-          </button>
+          </Button>
         )}
 
-        {/* Legend */}
+        {/* 凡例 */}
         <div className="flex flex-wrap gap-2 text-xs md:text-sm text-gray-600">
-          <div className="flex items-center gap-1.5 bg-white rounded-full border border-gray-200 px-2.5 py-1">
-            <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ backgroundColor: GENDER_COLOR.male.border }} />
-            男性
-          </div>
-          <div className="flex items-center gap-1.5 bg-white rounded-full border border-gray-200 px-2.5 py-1">
-            <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ backgroundColor: GENDER_COLOR.female.border }} />
-            女性
-          </div>
-          <div className="flex items-center gap-1.5 bg-white rounded-full border border-gray-200 px-2.5 py-1">
-            <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ backgroundColor: GENDER_COLOR.other.border }} />
-            その他
-          </div>
-          <div className="flex items-center gap-1.5 bg-white rounded-full border border-gray-200 px-2.5 py-1">
-            <span className="inline-block w-4 border-t-2 border-gray-400" />
-            配偶者
-          </div>
-          <div className="flex items-center gap-1.5 bg-white rounded-full border border-gray-200 px-2.5 py-1">
-            <span className="inline-block w-4 border-t-2 border-gray-300" />
-            親子
-          </div>
-          <div className="flex items-center gap-1.5 bg-white rounded-full border border-gray-200 px-2.5 py-1">
-            <span aria-hidden>ー / ＋</span>
-            クリックで子孫を折りたたみ
-          </div>
+          {LEGEND_ITEMS.map((item) => (
+            <div
+              key={item.label}
+              className="flex items-center gap-1.5 bg-white rounded-full border border-gray-200 px-2.5 py-1"
+            >
+              {item.swatch}
+              {item.label}
+            </div>
+          ))}
         </div>
       </div>
+
+      {copyError && <Alert className="mb-3">{copyError}</Alert>}
 
       {/* Scrollable canvas */}
       <div
