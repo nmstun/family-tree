@@ -21,6 +21,17 @@ const MIN_SCALE = 0.6
 const MAX_SCALE = 2
 const SCALE_STEP = 0.1
 
+// 印刷（PDF保存）時の用紙まわりの寸法。globals.css の @media print と対応させる。
+const PRINT_MARGIN_MM = 6
+// 見出し（家系図名と日付）の高さ。globals.css の .print-area .print-only で
+// 同じ値に固定しているので、変更するときは両方あわせて直すこと。
+const PRINT_TITLE_MM = 14
+const PRINT_SHORT_SIDE_MM = 210 // 用紙の短辺（A4の幅に合わせる）
+const PRINT_MAX_SIDE_MM = 1200 // 用紙が長くなりすぎないための上限
+// ノードのドロップシャドウ（node-shadow フィルタ）が figure の外側へ広がるぶんの余裕。
+// フィルタ領域は各ノードの上下左右に20%ずつ取っているので、その最大値に合わせる。
+const PRINT_SHADOW_PAD = Math.ceil(NODE_WIDTH * 0.2)
+
 const GENDER_COLOR: Record<FamilyMember['gender'], { border: string; bg: string }> = {
   male: { border: '#3b82f6', bg: '#eff6ff' },
   female: { border: '#ec4899', bg: '#fdf2f8' },
@@ -346,6 +357,70 @@ export default function FamilyTreeView({
     return pngBlob
   }
 
+  // 印刷時は用紙の余白をできるだけ減らす。
+  // (1) viewBox を実際に描かれている範囲まで切り詰める。
+  //     レイアウトの計算上、viewBox には中身が無い領域が残ることがあり
+  //     （実測で幅901に対し中身は636しかなく、しかも左右非対称だった）、
+  //     そのままだと余白が増えるうえ家系図が中央からずれて見える。
+  // (2) 切り詰めた後の縦横比に合わせて用紙の向きを決める。
+  //     向きを指定しないと、縦長の家系図がA4横に載って大半が余白になる。
+  const handlePrint = () => {
+    const svgEl = svgRef.current
+    const contentGroup = svgEl?.querySelector('g')
+    const originalViewBox = svgEl?.getAttribute('viewBox') ?? null
+
+    let pageSize = svgWidth >= svgHeight ? 'A4 landscape' : 'A4 portrait'
+
+    if (svgEl && contentGroup) {
+      const box = (contentGroup as SVGGraphicsElement).getBBox()
+      if (box.width > 0 && box.height > 0) {
+        // getBBox() は図形そのものの範囲しか返さず、ノードに掛けている
+        // ドロップシャドウ（filter で外側に広がる）は含まれない。
+        // そのぶんの余裕を持たせないと、端のノードの影が切れてしまう。
+        const pad = PRINT_SHADOW_PAD
+        const viewW = box.width + pad * 2
+        const viewH = box.height + pad * 2
+        svgEl.setAttribute('viewBox', `${box.x - pad} ${box.y - pad} ${viewW} ${viewH}`)
+
+        // (3) 用紙そのものを家系図の形に合わせる。
+        //     家系図は縦横比が極端（例: 縦が横の2.8倍）になりやすく、
+        //     A4（1.4倍）に載せると形が違いすぎて半分近くが余白になる。
+        //     短辺をA4幅に固定して長辺を縦横比から求めることで、
+        //     文字の大きさは保ったまま余白をほぼ無くせる。
+        //     計算は「余白と見出しを除いた、家系図が実際に置ける領域」を基準に行い、
+        //     最後に余白ぶんを足して用紙サイズにする。
+        // 縦横比は viewBox（余裕を含めた実際の描画範囲）から求める。
+        // ここが viewBox とずれると、そのぶん用紙に無駄な余白が残る。
+        const aspect = viewW / viewH
+        const shortContentMm = PRINT_SHORT_SIDE_MM - PRINT_MARGIN_MM * 2
+        const [contentW, contentH] =
+          aspect >= 1
+            ? [shortContentMm * aspect, shortContentMm] // 横長: 高さを固定
+            : [shortContentMm, shortContentMm / aspect] // 縦長: 幅を固定
+
+        const pageW = Math.min(PRINT_MAX_SIDE_MM, contentW + PRINT_MARGIN_MM * 2)
+        const pageH = Math.min(
+          PRINT_MAX_SIDE_MM,
+          contentH + PRINT_TITLE_MM + PRINT_MARGIN_MM * 2
+        )
+        pageSize = `${Math.round(pageW)}mm ${Math.round(pageH)}mm`
+      }
+    }
+
+    const style = document.createElement('style')
+    style.textContent = `@page { size: ${pageSize}; margin: 6mm; }`
+    document.head.appendChild(style)
+
+    const cleanup = () => {
+      style.remove()
+      // 画面表示用の viewBox に戻す
+      if (svgEl && originalViewBox) svgEl.setAttribute('viewBox', originalViewBox)
+      window.removeEventListener('afterprint', cleanup)
+    }
+    window.addEventListener('afterprint', cleanup)
+    window.print()
+  }
+
   const handleCopyImage = () => {
     if (!svgRef.current || copying) return
     setCopying(true)
@@ -409,7 +484,7 @@ export default function FamilyTreeView({
 
         {/* ブラウザの印刷ダイアログで「PDFとして保存」を選ぶとPDFになる。
             SVGのまま印刷するので、用紙に合わせて縮小しても文字が潰れない。 */}
-        <Button variant="toolbar" onClick={() => window.print()}>
+        <Button variant="toolbar" onClick={handlePrint}>
           <span aria-hidden>🖨️</span>
           PDF・印刷
         </Button>

@@ -28,16 +28,26 @@
     border-radius: 0 !important;
   }
 
-  /* 画面上のズーム倍率に関係なく、用紙1枚に収まるよう縮小する。
-     width/height 属性ではなく viewBox を基準に拡大縮小させる。
-     縦は見出しのぶんを引いた高さに収め、横は用紙の中央に置く。 */
+  /* 用紙の印刷可能領域そのものをSVGの表示領域として与える。
+     SVGは viewBox と preserveAspectRatio により、その枠内で
+     縦横比を保ったまま最大まで拡大し、中央に配置される。
+     （以前は max-height だけを指定していたため、家系図の縦横比と
+     用紙の縦横比が合わないときに余白が大きく残っていた） */
+  /* 見出しの高さを固定する。ここを成り行きにすると、用紙サイズを計算する
+     JS側の想定とずれて家系図が用紙からはみ出す。 */
+  .print-area .print-only {
+    height: 14mm;
+    margin: 0;
+    overflow: hidden;
+  }
+
   .print-area svg {
     display: block;
-    margin: 0 auto;
-    width: auto !important;
-    height: auto !important;
-    max-width: 100%;
-    max-height: 90vh;
+    width: 100% !important;
+    /* 見出し（家系図名と日付）のぶんだけ差し引く */
+    height: calc(100vh - 14mm) !important;
+    max-width: none;
+    max-height: none;
   }
 
   /* 折りたたみボタンは操作用なので印刷しない */
@@ -50,8 +60,10 @@
     display: block !important;
   }
 
+  /* 印刷実行時に、家系図の縦横比に合わせた向き（size）を JS が上書きする。
+     これはその指定が効かない場合のための既定値。 */
   @page {
-    margin: 10mm;
+    margin: 6mm;
   }
 }
 
