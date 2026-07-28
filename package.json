@@ -1,6 +1,6 @@
 {
   "name": "family-tree-app",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -16,6 +16,7 @@
     "@types/node": "^20.4.0",
     "@types/react": "^18.2.0",
     "@types/react-dom": "^18.2.0",
+    "jspdf": "^4.2.1",
     "next": "^14.0.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",

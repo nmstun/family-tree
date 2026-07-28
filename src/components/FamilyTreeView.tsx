@@ -34,6 +34,8 @@ const PRINT_MARGIN_MM = 6
 const PRINT_TITLE_MM = 14
 const A4_WIDTH_MM = 210
 const A4_HEIGHT_MM = 297
+// PDFに埋め込む画像の解像度。上げるほど綺麗だがファイルも大きくなる。
+const PDF_DPI = 200
 // 1ページ内で家系図に使える領域の「横幅 ÷ 高さ」。分割する高さの計算に使う。
 const PRINT_CONTENT_ASPECT =
   (A4_WIDTH_MM - PRINT_MARGIN_MM * 2) /
@@ -167,6 +169,8 @@ export default function FamilyTreeView({
   const [copyError, setCopyError] = useState<string | null>(null)
   // 印刷用に切り分けたページ。印刷中だけ中身が入る。
   const [printSlices, setPrintSlices] = useState<PrintSlice[]>([])
+  const [savingPdf, setSavingPdf] = useState(false)
+  const [pdfError, setPdfError] = useState<string | null>(null)
   const [collapsedRootIds, setCollapsedRootIds] = useState<Set<string>>(() => new Set())
   const containerRef = useRef<HTMLDivElement>(null)
   const svgRef = useRef<SVGSVGElement>(null)
@@ -406,6 +410,116 @@ export default function FamilyTreeView({
     return pngBlob
   }
 
+  // 家系図の指定した範囲（1ページぶん）を、A4用紙1枚ぶんのcanvasに描く。
+  // 見出しはcanvasに直接描く。PDFの標準フォントは日本語を持っていないため、
+  // PDF側に文字として入れると文字化けしてしまう。
+  const renderPageToCanvas = async (
+    slice: PrintSlice,
+    pageIndex: number,
+    pageCount: number
+  ): Promise<HTMLCanvasElement> => {
+    const svgEl = svgRef.current
+    if (!svgEl) throw new Error('家系図が見つかりません')
+
+    const mmToPx = (mm: number) => Math.round((mm / 25.4) * PDF_DPI)
+    const pageW = mmToPx(A4_WIDTH_MM)
+    const pageH = mmToPx(A4_HEIGHT_MM)
+    const margin = mmToPx(PRINT_MARGIN_MM)
+    const titleH = mmToPx(PRINT_TITLE_MM)
+    const treeW = pageW - margin * 2
+    const treeH = pageH - margin * 2 - titleH
+
+    // 画面表示用のSVGを複製し、このページに写す範囲だけを viewBox で切り出す
+    const clone = svgEl.cloneNode(true) as SVGSVGElement
+    clone.setAttribute('viewBox', `${slice.x} ${slice.y} ${slice.width} ${slice.height}`)
+    clone.setAttribute('preserveAspectRatio', 'xMidYMin meet')
+    clone.setAttribute('width', String(treeW))
+    clone.setAttribute('height', String(treeH))
+    // 操作用の折りたたみボタンはPDFには載せない
+    clone.querySelectorAll('.print-hide').forEach((el) => el.remove())
+
+    const svgUrl = URL.createObjectURL(
+      new Blob([new XMLSerializer().serializeToString(clone)], {
+        type: 'image/svg+xml;charset=utf-8',
+      })
+    )
+    try {
+      const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const img = new Image()
+        img.onload = () => resolve(img)
+        img.onerror = reject
+        img.src = svgUrl
+      })
+
+      const canvas = document.createElement('canvas')
+      canvas.width = pageW
+      canvas.height = pageH
+      const ctx = canvas.getContext('2d')
+      if (!ctx) throw new Error('このブラウザはPDFの作成に対応していません')
+
+      ctx.fillStyle = '#ffffff'
+      ctx.fillRect(0, 0, pageW, pageH)
+
+      const titleFont = Math.round(titleH * 0.34)
+      ctx.fillStyle = '#111827'
+      ctx.font = `bold ${titleFont}px sans-serif`
+      ctx.textBaseline = 'middle'
+      ctx.fillText(treeName ?? '家系図', margin, margin + titleH / 2)
+
+      ctx.fillStyle = '#6b7280'
+      ctx.font = `${Math.round(titleFont * 0.8)}px sans-serif`
+      ctx.textAlign = 'right'
+      ctx.fillText(
+        `${new Date().toLocaleDateString('ja-JP')} 時点 ／ ${pageIndex + 1} / ${pageCount}`,
+        pageW - margin,
+        margin + titleH / 2
+      )
+      ctx.textAlign = 'left'
+
+      ctx.drawImage(image, margin, margin + titleH, treeW, treeH)
+      return canvas
+    } finally {
+      URL.revokeObjectURL(svgUrl)
+    }
+  }
+
+  // PDFファイルとして保存する。
+  // 印刷ダイアログ経由（window.print）はスマホ、とくにiOSでは
+  // ファイルとして保存しづらいため、PDFそのものを作ってダウンロードさせる。
+  const handleSavePdf = async () => {
+    if (savingPdf) return
+    setSavingPdf(true)
+    setPdfError(null)
+    try {
+      const contentGroup = svgRef.current?.querySelector('g')
+      if (!contentGroup) throw new Error('家系図が見つかりません')
+      const slices = computePrintSlices((contentGroup as SVGGraphicsElement).getBBox())
+
+      const { jsPDF } = await import('jspdf')
+      const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' })
+
+      for (let i = 0; i < slices.length; i++) {
+        const canvas = await renderPageToCanvas(slices[i], i, slices.length)
+        if (i > 0) pdf.addPage()
+        pdf.addImage(
+          canvas.toDataURL('image/jpeg', 0.92),
+          'JPEG',
+          0,
+          0,
+          A4_WIDTH_MM,
+          A4_HEIGHT_MM
+        )
+      }
+
+      pdf.save(`${treeName ?? '家系図'}-${new Date().toISOString().slice(0, 10)}.pdf`)
+    } catch (err) {
+      console.error(err)
+      setPdfError('PDFの作成に失敗しました')
+    } finally {
+      setSavingPdf(false)
+    }
+  }
+
   // 印刷時は用紙の余白をできるだけ減らす。
   // (1) 実際に描かれている範囲（bbox）を求める。レイアウト計算の都合で
   //     viewBox には中身の無い領域が残ることがあり（実データで幅1949に対し
@@ -497,9 +611,17 @@ export default function FamilyTreeView({
 
         {/* ブラウザの印刷ダイアログで「PDFとして保存」を選ぶとPDFになる。
             SVGのまま印刷するので、用紙に合わせて縮小しても文字が潰れない。 */}
-        <Button variant="toolbar" onClick={handlePrint}>
+        {/* PDFファイルを直接作って保存する。スマホ（とくにiOS）は印刷ダイアログから
+            ファイルとして保存するのが難しいため、こちらを主な導線にする。 */}
+        <Button variant="toolbar" onClick={handleSavePdf} disabled={savingPdf}>
+          <span aria-hidden>📄</span>
+          {savingPdf ? 'PDFを作成中...' : 'PDFで保存'}
+        </Button>
+
+        {/* 紙に印刷したい場合はブラウザの印刷ダイアログを使う */}
+        <Button variant="toolbar" onClick={handlePrint} className="hidden md:inline-flex">
           <span aria-hidden>🖨️</span>
-          PDF・印刷
+          印刷
         </Button>
 
         {selfMemberId && !hiddenMemberIds.has(selfMemberId) && (
@@ -537,6 +659,7 @@ export default function FamilyTreeView({
       </div>
 
       {copyError && <Alert className="mb-3">{copyError}</Alert>}
+      {pdfError && <Alert className="mb-3">{pdfError}</Alert>}
 
       {/* 印刷用に切り分けたページ。1ページ＝用紙1枚ぶんの高さを持ち、
           同じ家系図の別の区間を viewBox で切り出して表示する。
