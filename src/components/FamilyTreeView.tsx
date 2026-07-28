@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { FamilyMember, Marriage, ParentChildRelation } from '@/types'
 import { computeFamilyTreeLayout, NODE_WIDTH, NODE_HEIGHT, V_GAP } from '@/utils/treeLayout'
 import { calculateAge } from '@/utils/age'
@@ -22,15 +23,61 @@ const MAX_SCALE = 2
 const SCALE_STEP = 0.1
 
 // 印刷（PDF保存）時の用紙まわりの寸法。globals.css の @media print と対応させる。
+//
+// 以前は家系図の縦横比に合わせた用紙サイズ（例: 210mm × 677mm）を @page size で
+// 指定していたが、Safari は @page の size を無視して用紙をA4のままにするため、
+// 実機では効かず横に大きな余白が残っていた。
+// そのため用紙はA4固定とし、家系図のほうを用紙の幅いっぱいに拡大したうえで
+// 用紙の高さごとに分割する（＝ページを分ける）方式にする。
 const PRINT_MARGIN_MM = 6
-// 見出し（家系図名と日付）の高さ。globals.css の .print-area .print-only で
-// 同じ値に固定しているので、変更するときは両方あわせて直すこと。
+// 見出し（家系図名と日付）の高さ。globals.css 側と同じ値にすること。
 const PRINT_TITLE_MM = 14
-const PRINT_SHORT_SIDE_MM = 210 // 用紙の短辺（A4の幅に合わせる）
-const PRINT_MAX_SIDE_MM = 1200 // 用紙が長くなりすぎないための上限
+const A4_WIDTH_MM = 210
+const A4_HEIGHT_MM = 297
+// 1ページ内で家系図に使える領域の「横幅 ÷ 高さ」。分割する高さの計算に使う。
+const PRINT_CONTENT_ASPECT =
+  (A4_WIDTH_MM - PRINT_MARGIN_MM * 2) /
+  (A4_HEIGHT_MM - PRINT_MARGIN_MM * 2 - PRINT_TITLE_MM)
 // ノードのドロップシャドウ（node-shadow フィルタ）が figure の外側へ広がるぶんの余裕。
 // フィルタ領域は各ノードの上下左右に20%ずつ取っているので、その最大値に合わせる。
 const PRINT_SHADOW_PAD = Math.ceil(NODE_WIDTH * 0.2)
+
+type PrintSlice = { x: number; y: number; width: number; height: number }
+
+/**
+ * 家系図を用紙の幅いっぱいに拡大したうえで、用紙1枚に入る高さごとに切り分ける。
+ * 1枚に収めようとすると、家系図（縦長）と用紙（A4）の縦横比の差がそのまま
+ * 余白になってしまうため（実データで横が約58%余っていた）、ページを分けて
+ * 幅を使い切る。
+ */
+function computePrintSlices(box: {
+  x: number
+  y: number
+  width: number
+  height: number
+}): PrintSlice[] {
+  if (box.width <= 0 || box.height <= 0) return []
+  const pad = PRINT_SHADOW_PAD
+  const x = box.x - pad
+  const width = box.width + pad * 2
+  const height = box.height + pad * 2
+  // 幅を用紙いっぱいに使ったとき、1ページに収まる家系図の高さ
+  const sliceHeight = width / PRINT_CONTENT_ASPECT
+  if (sliceHeight >= height) {
+    return [{ x, y: box.y - pad, width, height: sliceHeight }]
+  }
+  // ページの境目でカードが分断されると読めなくなるため、隣のページと少し重ねる。
+  // カード1枚ぶんを重ねておけば、切れたカードは次のページに必ず丸ごと現れる。
+  const overlap = Math.max(NODE_WIDTH, NODE_HEIGHT)
+  const step = sliceHeight - overlap
+  const count = Math.max(1, Math.ceil((height - overlap) / step))
+  return Array.from({ length: count }, (_, i) => ({
+    x,
+    y: box.y - pad + i * step,
+    width,
+    height: sliceHeight,
+  }))
+}
 
 const GENDER_COLOR: Record<FamilyMember['gender'], { border: string; bg: string }> = {
   male: { border: '#3b82f6', bg: '#eff6ff' },
@@ -118,6 +165,8 @@ export default function FamilyTreeView({
   const [copying, setCopying] = useState(false)
   const [copied, setCopied] = useState(false)
   const [copyError, setCopyError] = useState<string | null>(null)
+  // 印刷用に切り分けたページ。印刷中だけ中身が入る。
+  const [printSlices, setPrintSlices] = useState<PrintSlice[]>([])
   const [collapsedRootIds, setCollapsedRootIds] = useState<Set<string>>(() => new Set())
   const containerRef = useRef<HTMLDivElement>(null)
   const svgRef = useRef<SVGSVGElement>(null)
@@ -358,67 +407,31 @@ export default function FamilyTreeView({
   }
 
   // 印刷時は用紙の余白をできるだけ減らす。
-  // (1) viewBox を実際に描かれている範囲まで切り詰める。
-  //     レイアウトの計算上、viewBox には中身が無い領域が残ることがあり
-  //     （実測で幅901に対し中身は636しかなく、しかも左右非対称だった）、
-  //     そのままだと余白が増えるうえ家系図が中央からずれて見える。
-  // (2) 切り詰めた後の縦横比に合わせて用紙の向きを決める。
-  //     向きを指定しないと、縦長の家系図がA4横に載って大半が余白になる。
+  // (1) 実際に描かれている範囲（bbox）を求める。レイアウト計算の都合で
+  //     viewBox には中身の無い領域が残ることがあり（実データで幅1949に対し
+  //     中身は1684しかなかった）、そのままだと余白が増える。
+  // (2) 家系図を用紙の幅いっぱいに拡大し、用紙の高さごとにページを分ける。
+  //     1枚に収める方式だと縦横比の差がそのまま余白になり、
+  //     用紙サイズ自体を変える方式は Safari が @page size を無視するため使えない。
   const handlePrint = () => {
-    const svgEl = svgRef.current
-    const contentGroup = svgEl?.querySelector('g')
-    const originalViewBox = svgEl?.getAttribute('viewBox') ?? null
-
-    let pageSize = svgWidth >= svgHeight ? 'A4 landscape' : 'A4 portrait'
-
-    if (svgEl && contentGroup) {
-      const box = (contentGroup as SVGGraphicsElement).getBBox()
-      if (box.width > 0 && box.height > 0) {
-        // getBBox() は図形そのものの範囲しか返さず、ノードに掛けている
-        // ドロップシャドウ（filter で外側に広がる）は含まれない。
-        // そのぶんの余裕を持たせないと、端のノードの影が切れてしまう。
-        const pad = PRINT_SHADOW_PAD
-        const viewW = box.width + pad * 2
-        const viewH = box.height + pad * 2
-        svgEl.setAttribute('viewBox', `${box.x - pad} ${box.y - pad} ${viewW} ${viewH}`)
-
-        // (3) 用紙そのものを家系図の形に合わせる。
-        //     家系図は縦横比が極端（例: 縦が横の2.8倍）になりやすく、
-        //     A4（1.4倍）に載せると形が違いすぎて半分近くが余白になる。
-        //     短辺をA4幅に固定して長辺を縦横比から求めることで、
-        //     文字の大きさは保ったまま余白をほぼ無くせる。
-        //     計算は「余白と見出しを除いた、家系図が実際に置ける領域」を基準に行い、
-        //     最後に余白ぶんを足して用紙サイズにする。
-        // 縦横比は viewBox（余裕を含めた実際の描画範囲）から求める。
-        // ここが viewBox とずれると、そのぶん用紙に無駄な余白が残る。
-        const aspect = viewW / viewH
-        const shortContentMm = PRINT_SHORT_SIDE_MM - PRINT_MARGIN_MM * 2
-        const [contentW, contentH] =
-          aspect >= 1
-            ? [shortContentMm * aspect, shortContentMm] // 横長: 高さを固定
-            : [shortContentMm, shortContentMm / aspect] // 縦長: 幅を固定
-
-        const pageW = Math.min(PRINT_MAX_SIDE_MM, contentW + PRINT_MARGIN_MM * 2)
-        const pageH = Math.min(
-          PRINT_MAX_SIDE_MM,
-          contentH + PRINT_TITLE_MM + PRINT_MARGIN_MM * 2
-        )
-        pageSize = `${Math.round(pageW)}mm ${Math.round(pageH)}mm`
-      }
+    const contentGroup = svgRef.current?.querySelector('g')
+    if (!contentGroup) {
+      window.print()
+      return
     }
 
-    const style = document.createElement('style')
-    style.textContent = `@page { size: ${pageSize}; margin: 6mm; }`
-    document.head.appendChild(style)
+    const box = (contentGroup as SVGGraphicsElement).getBBox()
+    const slices = computePrintSlices(box)
+    setPrintSlices(slices)
 
     const cleanup = () => {
-      style.remove()
-      // 画面表示用の viewBox に戻す
-      if (svgEl && originalViewBox) svgEl.setAttribute('viewBox', originalViewBox)
+      setPrintSlices([])
       window.removeEventListener('afterprint', cleanup)
     }
     window.addEventListener('afterprint', cleanup)
-    window.print()
+
+    // 分割したページがDOMに反映されてから印刷ダイアログを開く
+    requestAnimationFrame(() => requestAnimationFrame(() => window.print()))
   }
 
   const handleCopyImage = () => {
@@ -525,17 +538,40 @@ export default function FamilyTreeView({
 
       {copyError && <Alert className="mb-3">{copyError}</Alert>}
 
+      {/* 印刷用に切り分けたページ。1ページ＝用紙1枚ぶんの高さを持ち、
+          同じ家系図の別の区間を viewBox で切り出して表示する。
+          アプリの見出しやツールバーが印刷時に場所を取って家系図を下へ押し出さないよう、
+          body 直下へ出しておき、印刷時はこちらだけを表示する。 */}
+      {printSlices.length > 0 &&
+        createPortal(
+          <div className="print-root">
+            {printSlices.map((slice, i) => (
+              <div key={`page-${i}`} className="print-page">
+                <div className="print-page-head">
+                  {treeName ?? '家系図'}
+                  <span className="print-page-no">
+                    {new Date().toLocaleDateString('ja-JP')} 時点 ／ {i + 1} / {printSlices.length}
+                  </span>
+                </div>
+                <svg
+                  viewBox={`${slice.x} ${slice.y} ${slice.width} ${slice.height}`}
+                  preserveAspectRatio="xMidYMin meet"
+                  xmlns="http://www.w3.org/2000/svg"
+                >
+                  {renderTreeContent(`p${i}`)}
+                </svg>
+              </div>
+            ))}
+          </div>,
+          document.body
+        )}
+
       {/* Scrollable canvas */}
       <div
         ref={containerRef}
         className="print-area overflow-auto rounded-xl bg-gradient-to-br from-gray-50 to-gray-100"
         style={{ maxHeight: '70vh' }}
       >
-        {/* 印刷したときだけ出る見出し。誰の家系図をいつ出力したものか分かるようにする */}
-        <div className="print-only mb-3 text-center">
-          <h1 className="text-lg font-bold text-gray-900">{treeName ?? '家系図'}</h1>
-          <p className="text-xs text-gray-500">{new Date().toLocaleDateString('ja-JP')} 時点</p>
-        </div>
         <svg
           ref={svgRef}
           width={svgWidth * scale}
@@ -543,12 +579,21 @@ export default function FamilyTreeView({
           viewBox={`0 0 ${svgWidth} ${svgHeight}`}
           xmlns="http://www.w3.org/2000/svg"
         >
-          <defs>
-            <filter id="node-shadow" x="-20%" y="-20%" width="140%" height="140%">
-              <feDropShadow dx="0" dy="1.5" stdDeviation="2.5" floodColor="#1f2937" floodOpacity="0.15" />
-            </filter>
-          </defs>
-          <g transform={`translate(${padding}, ${padding})`}>
+          {renderTreeContent('screen')}
+        </svg>
+      </div>
+    </div>
+  )
+
+  function renderTreeContent(idPrefix: string) {
+    return (
+      <>
+        <defs>
+          <filter id={`${idPrefix}-node-shadow`} x="-20%" y="-20%" width="140%" height="140%">
+            <feDropShadow dx="0" dy="1.5" stdDeviation="2.5" floodColor="#1f2937" floodOpacity="0.15" />
+          </filter>
+        </defs>
+        <g transform={`translate(${padding}, ${padding})`}>
             {/* Generation bands (drawn first, under everything) */}
             {Array.from({ length: generationCount }, (_, g) => {
               if (g % 2 === 0) return null
@@ -604,7 +649,7 @@ export default function FamilyTreeView({
                 <g
                   key={node.member.id}
                   transform={`translate(${nodeX}, ${nodeY})`}
-                  filter="url(#node-shadow)"
+                  filter={`url(#${idPrefix}-node-shadow)`}
                 >
                   <rect
                     width={boxWidth}
@@ -621,7 +666,7 @@ export default function FamilyTreeView({
                   )}
                   {node.member.photo ? (
                     <>
-                      <clipPath id={`clip-${node.member.id}`}>
+                      <clipPath id={`${idPrefix}-clip-${node.member.id}`}>
                         <circle cx={centerX} cy={28} r={20} />
                       </clipPath>
                       <image
@@ -630,7 +675,7 @@ export default function FamilyTreeView({
                         y={8}
                         width={40}
                         height={40}
-                        clipPath={`url(#clip-${node.member.id})`}
+                        clipPath={`url(#${idPrefix}-clip-${node.member.id})`}
                         preserveAspectRatio="xMidYMid slice"
                       />
                     </>
@@ -699,9 +744,8 @@ export default function FamilyTreeView({
                 </g>
               )
             })}
-          </g>
-        </svg>
-      </div>
-    </div>
-  )
+        </g>
+      </>
+    )
+  }
 }

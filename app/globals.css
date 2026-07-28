@@ -3,51 +3,61 @@
 @tailwind utilities;
 
 /* ===== 印刷（PDF保存）用 =====
-   ブラウザの印刷ダイアログで「PDFとして保存」を選ぶと、家系図をPDFにできる。
-   家系図はSVG（ベクター）なので、縮小しても文字がぼやけない。 */
+   ブラウザの印刷ダイアログで「PDFとして保存」を選ぶとPDFになる。
+   家系図はSVG（ベクター）なので、拡大縮小しても文字がぼやけない。
+
+   家系図は縦横比が極端（実データで約3.3:1）で、A4（約1.4:1）に1枚で収めると
+   横に6割近い余白が残る。用紙サイズ自体を家系図に合わせる方法もあるが、
+   Safari は @page の size を無視するため実機では効かない。
+   そこで家系図を用紙の幅いっぱいに拡大し、用紙の高さごとにページを分ける。 */
 @media print {
-  /* 家系図以外は出さない。display:none だと祖先要素まで消す指定が要るため、
-     visibility で消してから対象だけ表示し直す（レイアウトは維持される）。 */
-  body * {
-    visibility: hidden;
+  /* アプリの画面は丸ごと出さず、印刷用に組んだページだけを出す。
+     visibility:hidden だと要素が場所を取ったままになり、その空白ぶん
+     家系図が下へ押し出されてしまうので display:none で流し込みから外す。 */
+  body > *:not(.print-root) {
+    display: none !important;
   }
-  .print-area,
-  .print-area * {
-    visibility: visible;
+  .print-root {
+    display: block !important;
   }
 
-  .print-area {
-    position: absolute;
-    left: 0;
-    top: 0;
+  .print-page {
+    /* 画面側で display:none にしているので、印刷時は必ず戻すこと */
+    display: block;
+    position: relative;
+    /* 1ページ＝用紙1枚。用紙サイズが変わっても vh が追従する */
+    height: 100vh;
     width: 100%;
-    /* 画面表示用のスクロール枠・背景は印刷では邪魔になるので解除する */
-    max-height: none !important;
-    overflow: visible !important;
-    background: none !important;
-    border-radius: 0 !important;
-  }
-
-  /* 用紙の印刷可能領域そのものをSVGの表示領域として与える。
-     SVGは viewBox と preserveAspectRatio により、その枠内で
-     縦横比を保ったまま最大まで拡大し、中央に配置される。
-     （以前は max-height だけを指定していたため、家系図の縦横比と
-     用紙の縦横比が合わないときに余白が大きく残っていた） */
-  /* 見出しの高さを固定する。ここを成り行きにすると、用紙サイズを計算する
-     JS側の想定とずれて家系図が用紙からはみ出す。 */
-  .print-area .print-only {
-    height: 14mm;
-    margin: 0;
+    break-after: page;
+    page-break-after: always;
     overflow: hidden;
   }
+  .print-page:last-child {
+    break-after: auto;
+    page-break-after: auto;
+  }
 
-  .print-area svg {
+  /* 見出しの高さは固定する。ここが変わると分割位置の計算とずれる
+     （FamilyTreeView.tsx の PRINT_TITLE_MM と同じ値にすること） */
+  .print-page-head {
+    height: 14mm;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 10pt;
+    font-weight: 700;
+    color: #111827;
+  }
+  .print-page-no {
+    font-size: 8pt;
+    font-weight: 400;
+    color: #6b7280;
+  }
+
+  .print-page svg {
     display: block;
-    width: 100% !important;
-    /* 見出し（家系図名と日付）のぶんだけ差し引く */
-    height: calc(100vh - 14mm) !important;
-    max-width: none;
-    max-height: none;
+    width: 100%;
+    height: calc(100vh - 14mm);
   }
 
   /* 折りたたみボタンは操作用なので印刷しない */
@@ -55,19 +65,13 @@
     display: none !important;
   }
 
-  /* 画面では出さず、印刷したときだけ出す見出し */
-  .print-only {
-    display: block !important;
-  }
-
-  /* 印刷実行時に、家系図の縦横比に合わせた向き（size）を JS が上書きする。
-     これはその指定が効かない場合のための既定値。 */
   @page {
+    size: A4 portrait;
     margin: 6mm;
   }
 }
 
-/* 印刷用の見出しは画面では隠しておく */
-.print-only {
+/* 印刷用に組んだページは画面には出さない */
+.print-root {
   display: none;
 }
