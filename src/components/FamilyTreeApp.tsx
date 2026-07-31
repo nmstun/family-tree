@@ -9,22 +9,32 @@ import RelationshipManager from './RelationshipManager'
 import FamilyTreeView from './FamilyTreeView'
 import SignOutButton from './SignOutButton'
 import CollaboratorsPanel from './CollaboratorsPanel'
+import {
+  Users,
+  Link2,
+  Network,
+  UserPlus,
+  Download,
+  Upload,
+  type LucideIcon,
+} from 'lucide-react'
 import { Alert, Button, Card, useConfirm, cn } from './ui'
 
 type TabId = 'members' | 'relations' | 'view' | 'share' | 'export'
 
-// タブは以前ほぼ同じ<button>を5回書き並べていたので定義だけを配列にまとめる
-const TABS: { id: TabId; label: string }[] = [
-  { id: 'members', label: '👥 メンバー' },
-  { id: 'relations', label: '🔗 関係' },
-  { id: 'view', label: '🌳 家系図表示' },
-  { id: 'share', label: '🤝 共有' },
-  { id: 'export', label: '📥 エクスポート' },
+// タブは同じ形の<button>が並ぶだけなので定義だけを配列にまとめる。
+// 絵文字ではなく線画のアイコンで揃える（見た目の統一と、環境差による字形のばらつき回避）。
+const TABS: { id: TabId; label: string; Icon: LucideIcon }[] = [
+  { id: 'members', label: 'メンバー', Icon: Users },
+  { id: 'relations', label: '関係', Icon: Link2 },
+  { id: 'view', label: '家系図', Icon: Network },
+  { id: 'share', label: '共有', Icon: UserPlus },
+  { id: 'export', label: 'データ', Icon: Download },
 ]
 
 function SectionHeading({ children }: { children: React.ReactNode }) {
   return (
-    <h2 className="text-lg md:text-2xl font-bold text-gray-900 mb-3 md:mb-4">{children}</h2>
+    <h2 className="mb-3 text-[15px] font-semibold tracking-tight text-neutral-900">{children}</h2>
   )
 }
 
@@ -102,41 +112,55 @@ export default function FamilyTreeApp() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
-      <header className="bg-white shadow">
+    <div className="min-h-screen bg-neutral-50">
+      {/* ヘッダーとタブは1枚の面としてまとめ、スクロールしても残す */}
+      <div className="sticky top-0 z-20 border-b border-neutral-200 bg-white/80 backdrop-blur-md">
         {/* 右上には layout.tsx がバージョン表記を固定表示している。
             狭い画面でログアウトと重なるため、上側に余白を足して逃がす */}
-        <div className="max-w-6xl mx-auto px-3 md:px-4 pt-7 pb-4 md:py-6 flex items-start justify-between gap-3">
-          <div>
-            <h1 className="text-xl md:text-3xl font-bold text-gray-900">{tree.name}</h1>
-            <p className="text-xs md:text-base text-gray-600 mt-1">あなたの家系図を整理します</p>
+        <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 pt-6 pb-2 md:py-3">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-neutral-900 text-white">
+              <Network className="h-4 w-4" aria-hidden />
+            </span>
+            <h1 className="truncate text-[15px] font-semibold tracking-tight text-neutral-900">
+              {tree.name}
+            </h1>
           </div>
           <SignOutButton />
         </div>
-      </header>
 
-      <nav className="bg-white border-b border-gray-200 sticky top-0 z-10">
-        <div className="max-w-6xl mx-auto px-3 md:px-4 flex gap-2 md:gap-4 overflow-x-auto">
-          {TABS.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              aria-current={activeTab === tab.id ? 'page' : undefined}
-              className={cn(
-                'px-2 md:px-4 py-2 md:py-3 text-sm md:text-base font-medium border-b-2 transition whitespace-nowrap',
-                'outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 rounded-t',
-                activeTab === tab.id
-                  ? 'border-indigo-500 text-indigo-600'
-                  : 'border-transparent text-gray-700 hover:text-gray-900'
-              )}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-      </nav>
+        <nav className="mx-auto max-w-6xl px-2 md:px-3">
+          <div className="flex gap-0.5 overflow-x-auto">
+            {TABS.map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                aria-current={activeTab === tab.id ? 'page' : undefined}
+                className={cn(
+                  'relative flex items-center gap-1.5 whitespace-nowrap rounded-t-lg px-3 py-2.5',
+                  'text-[13px] font-medium transition-colors',
+                  'outline-none focus-visible:ring-2 focus-visible:ring-neutral-900/20',
+                  activeTab === tab.id
+                    ? 'text-neutral-900'
+                    : 'text-neutral-500 hover:text-neutral-900'
+                )}
+              >
+                <tab.Icon className="h-4 w-4" aria-hidden />
+                {tab.label}
+                {/* 選択中のタブを示す下線。文字色だけだと分かりにくいため */}
+                <span
+                  className={cn(
+                    'absolute inset-x-2 -bottom-px h-0.5 rounded-full transition-colors',
+                    activeTab === tab.id ? 'bg-neutral-900' : 'bg-transparent'
+                  )}
+                />
+              </button>
+            ))}
+          </div>
+        </nav>
+      </div>
 
-      <main className="max-w-6xl mx-auto px-3 md:px-4 py-4 md:py-8">
+      <main className="mx-auto max-w-6xl px-4 py-5 md:py-7">
         {activeTab === 'members' && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-8">
             <div>
@@ -174,9 +198,9 @@ export default function FamilyTreeApp() {
           </div>
         )}
 
+        {/* タブ名が「家系図」なので、この画面には見出しを置かずツールバーから始める */}
         {activeTab === 'view' && (
-          <Card>
-            <SectionHeading>家系図表示</SectionHeading>
+          <Card padding="none" className="p-3">
             <FamilyTreeView
               treeId={tree.id}
               treeName={tree.name}
@@ -196,24 +220,24 @@ export default function FamilyTreeApp() {
         )}
 
         {activeTab === 'export' && (
-          <div className="space-y-4 md:space-y-6">
+          <div className="grid gap-4 md:grid-cols-2">
             <Card>
-              <SectionHeading>データをエクスポート</SectionHeading>
-              <p className="text-sm md:text-base text-gray-600 mb-4 md:mb-6">
-                現在の家系図をJSON形式でダウンロードできます。写真を含むすべての情報が含まれます。
+              <SectionHeading>エクスポート</SectionHeading>
+              <p className="mb-4 text-[13px] leading-relaxed text-neutral-500">
+                現在の家系図をJSON形式でダウンロードします。写真を含むすべての情報が含まれます。
               </p>
-              <Button size="lg" onClick={handleExport}>
-                📥 JSONをダウンロード
+              <Button onClick={handleExport}>
+                <Download aria-hidden />
+                JSONをダウンロード
               </Button>
             </Card>
 
             <Card>
-              <SectionHeading>データをインポート</SectionHeading>
-              <p className="text-sm md:text-base text-gray-600 mb-4 md:mb-6">
-                このアプリからエクスポートしたJSONファイルを読み込んで復元できます。
-                <br />
-                <span className="text-red-600 font-medium">
-                  現在の家系図データはすべて削除され、インポートしたデータに置き換わります。
+              <SectionHeading>インポート</SectionHeading>
+              <p className="mb-4 text-[13px] leading-relaxed text-neutral-500">
+                このアプリから書き出したJSONを読み込んで復元します。
+                <span className="mt-1 block font-medium text-red-600">
+                  現在のデータはすべて置き換わります。
                 </span>
               </p>
               <input
@@ -225,24 +249,25 @@ export default function FamilyTreeApp() {
               />
               <Button
                 variant="outline"
-                size="lg"
                 disabled={importing}
                 onClick={() => importFileInputRef.current?.click()}
               >
-                {importing ? 'インポート中...' : '📤 JSONを選択してインポート'}
+                <Upload aria-hidden />
+                {importing ? 'インポート中...' : 'JSONを選択'}
               </Button>
               {importError && <Alert className="mt-3">{importError}</Alert>}
             </Card>
           </div>
         )}
 
-        <div className="mt-4 md:mt-8 flex items-center gap-2" aria-live="polite">
-          {syncStatus === 'syncing' && <Alert tone="info">同期中...</Alert>}
-          {syncStatus === 'synced' && <Alert tone="success">同期済み</Alert>}
+        {/* 保存状態。普段は目立たせず、失敗したときだけ操作を促す */}
+        <div className="mt-5 flex items-center gap-2" aria-live="polite">
+          {syncStatus === 'syncing' && <Alert tone="info">保存中...</Alert>}
+          {syncStatus === 'synced' && <Alert tone="success">保存しました</Alert>}
           {syncStatus === 'error' && (
             <>
               <Alert>保存に失敗しました</Alert>
-              <Button variant="subtle" size="sm" onClick={retrySync}>
+              <Button variant="secondary" size="sm" onClick={retrySync}>
                 再試行
               </Button>
             </>

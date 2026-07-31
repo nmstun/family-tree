@@ -5,7 +5,22 @@ import { createPortal } from 'react-dom'
 import { FamilyMember, Marriage, ParentChildRelation } from '@/types'
 import { computeFamilyTreeLayout, NODE_WIDTH, NODE_HEIGHT, V_GAP } from '@/utils/treeLayout'
 import { calculateAge } from '@/utils/age'
-import { Alert, Button, EmptyState } from './ui'
+import {
+  ZoomIn,
+  ZoomOut,
+  RotateCcw,
+  Maximize2,
+  MoveHorizontal,
+  MoveVertical,
+  Map as MapIcon,
+  LocateFixed,
+  Expand,
+  Copy,
+  Check,
+  FileDown,
+  Printer,
+} from 'lucide-react'
+import { Alert, Button, EmptyState, cn } from './ui'
 
 interface FamilyTreeViewProps {
   treeId: string
@@ -85,10 +100,13 @@ function computePrintSlices(box: {
   }))
 }
 
-const GENDER_COLOR: Record<FamilyMember['gender'], { border: string; bg: string }> = {
-  male: { border: '#3b82f6', bg: '#eff6ff' },
-  female: { border: '#ec4899', bg: '#fdf2f8' },
-  other: { border: '#8b5cf6', bg: '#f5f3ff' },
+// カードは白地にして、性別は枠線とアイコンの色だけで示す。
+// 以前は面全体を性別色で塗っていたため、人数が増えるほど画面が
+// 青とピンクで埋まって、家系の形そのものが読み取りにくかった。
+const GENDER_COLOR: Record<FamilyMember['gender'], { border: string; bg: string; tint: string }> = {
+  male: { border: '#93c5fd', bg: '#ffffff', tint: '#eff6ff' },
+  female: { border: '#f9a8d4', bg: '#ffffff', tint: '#fdf2f8' },
+  other: { border: '#c4b5fd', bg: '#ffffff', tint: '#f5f3ff' },
 }
 
 function ColorDot({ color }: { color: string }) {
@@ -103,8 +121,8 @@ const LEGEND_ITEMS: { label: string; swatch: React.ReactNode }[] = [
   { label: '男性', swatch: <ColorDot color={GENDER_COLOR.male.border} /> },
   { label: '女性', swatch: <ColorDot color={GENDER_COLOR.female.border} /> },
   { label: 'その他', swatch: <ColorDot color={GENDER_COLOR.other.border} /> },
-  { label: '配偶者', swatch: <span className="inline-block w-4 border-t-2 border-gray-400" /> },
-  { label: '親子', swatch: <span className="inline-block w-4 border-t-2 border-gray-300" /> },
+  { label: '配偶者', swatch: <span className="inline-block w-4 border-t-2 border-neutral-400" /> },
+  { label: '親子', swatch: <span className="inline-block w-4 border-t-2 border-neutral-300" /> },
   { label: 'クリックで子孫を折りたたみ', swatch: <span aria-hidden>ー / ＋</span> },
 ]
 
@@ -642,108 +660,119 @@ export default function FamilyTreeView({
 
   return (
     <div>
-      {/* Controls */}
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
-        <div className="inline-flex items-center gap-1 bg-white rounded-full shadow-sm border border-gray-200 p-1">
-          <button
-            onClick={() => setScale((s) => Math.max(MIN_SCALE, +(s - SCALE_STEP).toFixed(2)))}
-            className="min-w-[44px] min-h-[44px] md:min-w-[32px] md:min-h-[32px] flex items-center justify-center text-base md:text-sm text-gray-600 hover:bg-gray-100 rounded-full transition"
+      {/* ツールバー。以前はピル状のボタンが横一列に8個以上並んで見分けが付かなかったので、
+          「表示倍率」「向き」「書き出し」など役割ごとにまとめ、区切り線で分ける。 */}
+      <div className="mb-3 flex flex-wrap items-center gap-1.5 rounded-xl border border-neutral-200 bg-white p-1.5 shadow-sm">
+        {/* 表示倍率 */}
+        <div className="flex items-center gap-0.5">
+          <Button
+            variant="toolbar"
+            size="icon"
             aria-label="縮小"
+            onClick={() => setScale((s) => Math.max(MIN_SCALE, +(s - SCALE_STEP).toFixed(2)))}
           >
-            −
-          </button>
-          <span className="text-xs md:text-sm text-gray-600 w-12 text-center tabular-nums">
+            <ZoomOut aria-hidden />
+          </Button>
+          <span className="w-11 text-center text-[12px] tabular-nums text-neutral-500">
             {Math.round(scale * 100)}%
           </span>
-          <button
-            onClick={() => setScale((s) => Math.min(MAX_SCALE, +(s + SCALE_STEP).toFixed(2)))}
-            className="min-w-[44px] min-h-[44px] md:min-w-[32px] md:min-h-[32px] flex items-center justify-center text-base md:text-sm text-gray-600 hover:bg-gray-100 rounded-full transition"
+          <Button
+            variant="toolbar"
+            size="icon"
             aria-label="拡大"
+            onClick={() => setScale((s) => Math.min(MAX_SCALE, +(s + SCALE_STEP).toFixed(2)))}
           >
-            ＋
-          </button>
-          <button
-            onClick={() => setScale(1)}
-            className="min-h-[44px] md:min-h-[32px] px-3 text-sm text-gray-600 hover:bg-gray-100 rounded-full transition"
-          >
-            リセット
-          </button>
+            <ZoomIn aria-hidden />
+          </Button>
+          <Button variant="toolbar" size="icon" title="等倍に戻す" onClick={() => setScale(1)}>
+            <RotateCcw aria-hidden />
+          </Button>
           {/* 大きな家系図でも全体の形を一目で掴めるようにする */}
-          <button
-            onClick={handleFitAll}
-            className="min-h-[44px] md:min-h-[32px] px-3 text-sm text-gray-600 hover:bg-gray-100 rounded-full transition whitespace-nowrap"
-          >
-            全体を表示
-          </button>
+          <Button variant="toolbar" size="sm" onClick={handleFitAll}>
+            <Maximize2 aria-hidden />
+            全体
+          </Button>
         </div>
 
-        <Button variant="toolbar" onClick={() => setVertical((v) => !v)}>
-          <span aria-hidden>{vertical ? '↔️' : '↕️'}</span>
+        <span className="mx-0.5 h-5 w-px bg-neutral-200" aria-hidden />
+
+        <Button variant="toolbar" size="sm" onClick={() => setVertical((v) => !v)}>
+          {vertical ? <MoveHorizontal aria-hidden /> : <MoveVertical aria-hidden />}
           {vertical ? '横表示' : '縦表示'}
         </Button>
 
-        <Button variant="toolbar" onClick={handleCopyImage} disabled={copying}>
-          <span aria-hidden>{copied ? '✅' : '📋'}</span>
-          {copying ? 'コピー中...' : copied ? 'コピーしました' : '画像をコピー'}
-        </Button>
-
-        {/* ブラウザの印刷ダイアログで「PDFとして保存」を選ぶとPDFになる。
-            SVGのまま印刷するので、用紙に合わせて縮小しても文字が潰れない。 */}
-        {/* PDFファイルを直接作って保存する。スマホ（とくにiOS）は印刷ダイアログから
-            ファイルとして保存するのが難しいため、こちらを主な導線にする。 */}
-        <Button variant="toolbar" onClick={handleSavePdf} disabled={savingPdf}>
-          <span aria-hidden>📄</span>
-          {savingPdf ? 'PDFを作成中...' : 'PDFで保存'}
-        </Button>
-
-        {/* 紙に印刷したい場合はブラウザの印刷ダイアログを使う */}
-        <Button variant="toolbar" onClick={handlePrint} className="hidden md:inline-flex">
-          <span aria-hidden>🖨️</span>
-          印刷
-        </Button>
-
-        {selfMemberId && !hiddenMemberIds.has(selfMemberId) && (
-          <Button variant="toolbar" onClick={() => centerOnMember(selfMemberId)}>
-            <span aria-hidden>📍</span>
-            自分の位置へ
-          </Button>
-        )}
-
-        <label className="min-h-[44px] md:min-h-[32px] px-3 inline-flex items-center gap-1.5 text-sm text-gray-600 bg-white rounded-full shadow-sm border border-gray-200 cursor-pointer">
+        <label
+          className={cn(
+            'inline-flex min-h-[34px] cursor-pointer select-none items-center gap-1.5 rounded-lg px-2.5 text-[13px] font-medium transition-colors',
+            showMinimap
+              ? 'bg-neutral-100 text-neutral-900'
+              : 'text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900'
+          )}
+        >
           <input
             type="checkbox"
             checked={showMinimap}
             onChange={(e) => setShowMinimap(e.target.checked)}
-            className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+            className="sr-only"
           />
+          <MapIcon className="h-4 w-4" aria-hidden />
           全体図
         </label>
+
+        {selfMemberId && !hiddenMemberIds.has(selfMemberId) && (
+          <Button variant="toolbar" size="sm" onClick={() => centerOnMember(selfMemberId)}>
+            <LocateFixed aria-hidden />
+            自分へ
+          </Button>
+        )}
 
         {collapsedRootIds.size > 0 && (
           <Button
             variant="toolbar"
+            size="sm"
             onClick={() => {
               setCollapsedRootIds(new Set())
               persistCollapsed(new Set())
             }}
           >
-            <span aria-hidden>⊕</span>
+            <Expand aria-hidden />
             すべて展開（{collapsedRootIds.size}）
           </Button>
         )}
 
-        {/* 凡例 */}
-        <div className="flex flex-wrap gap-2 text-xs md:text-sm text-gray-600">
-          {LEGEND_ITEMS.map((item) => (
-            <div
-              key={item.label}
-              className="flex items-center gap-1.5 bg-white rounded-full border border-gray-200 px-2.5 py-1"
-            >
-              {item.swatch}
-              {item.label}
-            </div>
-          ))}
+        {/* 書き出し系は右端にまとめる */}
+        <div className="ml-auto flex items-center gap-0.5">
+          <Button variant="toolbar" size="sm" onClick={handleCopyImage} disabled={copying}>
+            {copied ? <Check aria-hidden /> : <Copy aria-hidden />}
+            {copying ? 'コピー中' : copied ? 'コピーしました' : '画像'}
+          </Button>
+          {/* PDFファイルを直接作って保存する。スマホ（とくにiOS）は印刷ダイアログから
+              ファイルとして保存するのが難しいため、こちらを主な導線にする。 */}
+          <Button variant="toolbar" size="sm" onClick={handleSavePdf} disabled={savingPdf}>
+            <FileDown aria-hidden />
+            {savingPdf ? '作成中' : 'PDF'}
+          </Button>
+          {/* 紙に印刷したい場合はブラウザの印刷ダイアログを使う */}
+          <Button
+            variant="toolbar"
+            size="icon"
+            title="印刷"
+            onClick={handlePrint}
+            className="hidden md:inline-flex"
+          >
+            <Printer aria-hidden />
+          </Button>
         </div>
+      </div>
+
+      {/* 凡例。操作ではないので、ツールバーとは分けて控えめに置く */}
+      <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 px-1 text-[12px] text-neutral-500">
+        {LEGEND_ITEMS.map((item) => (
+          <div key={item.label} className="flex items-center gap-1.5">
+            {item.swatch}
+            {item.label}
+          </div>
+        ))}
       </div>
 
       {copyError && <Alert className="mb-3">{copyError}</Alert>}
@@ -782,7 +811,7 @@ export default function FamilyTreeView({
         <div
           ref={containerRef}
           onScroll={syncViewport}
-          className="print-area overflow-auto rounded-xl bg-gradient-to-br from-gray-50 to-gray-100"
+          className="print-area overflow-auto rounded-xl border border-neutral-200 bg-neutral-50"
           style={{ maxHeight: '70vh' }}
         >
           <svg
@@ -800,7 +829,7 @@ export default function FamilyTreeView({
             クリック／ドラッグでその位置へ移動できる。
             表示枠は高さ70vhあり下端は画面外になりやすいので、上端側に置く。 */}
         {showMinimap && minimapSize.w > 0 && (
-          <div className="absolute right-2 top-2 rounded-lg border border-gray-300 bg-white/90 shadow-md p-1 backdrop-blur-sm">
+          <div className="absolute right-3 top-3 rounded-lg border border-neutral-200 bg-white/90 p-1 shadow-sm backdrop-blur-sm">
             <svg
               width={minimapSize.w}
               height={minimapSize.h}
@@ -833,9 +862,9 @@ export default function FamilyTreeView({
                 y={0}
                 width={0}
                 height={0}
-                fill="#4f46e5"
-                fillOpacity={0.12}
-                stroke="#4f46e5"
+                fill="#171717"
+                fillOpacity={0.08}
+                stroke="#171717"
                 strokeWidth={Math.max(svgWidth, svgHeight) / 200}
               />
             </svg>
@@ -865,7 +894,7 @@ export default function FamilyTreeView({
                   y={vertical ? 0 : bandStart}
                   width={vertical ? rowSize : layout.width}
                   height={vertical ? layout.width : rowSize}
-                  fill="#f1f5f9"
+                  fill="#fafafa"
                 />
               )
             })}
@@ -876,7 +905,7 @@ export default function FamilyTreeView({
                 key={edge.id}
                 d={vertical ? transposePath(edge.path) : edge.path}
                 fill="none"
-                stroke={edge.type === 'marriage' ? '#9ca3af' : '#c7cdd6'}
+                stroke={edge.type === 'marriage' ? '#a3a3a3' : '#d4d4d4'}
                 strokeWidth={edge.type === 'marriage' ? 2.25 : 2}
                 strokeLinecap="round"
                 strokeLinejoin="round"
@@ -914,58 +943,65 @@ export default function FamilyTreeView({
                   <rect
                     width={boxWidth}
                     height={boxHeight}
-                    rx={14}
+                    rx={12}
                     fill={colors.bg}
                     stroke={isSelf ? '#f59e0b' : colors.border}
-                    strokeWidth={isSelf ? 3 : 1.5}
+                    strokeWidth={isSelf ? 2 : 1.25}
                   />
-                  {isSelf && (
-                    <text x={8} y={16} fontSize={13}>
-                      ⭐
-                    </text>
-                  )}
                   {node.member.photo ? (
                     <>
                       <clipPath id={`${idPrefix}-clip-${node.member.id}`}>
-                        <circle cx={centerX} cy={28} r={20} />
+                        <circle cx={centerX} cy={28} r={19} />
                       </clipPath>
                       <image
                         href={node.member.photo}
-                        x={centerX - 20}
-                        y={8}
-                        width={40}
-                        height={40}
+                        x={centerX - 19}
+                        y={9}
+                        width={38}
+                        height={38}
                         clipPath={`url(#${idPrefix}-clip-${node.member.id})`}
                         preserveAspectRatio="xMidYMid slice"
                       />
                     </>
                   ) : (
-                    <circle
-                      cx={centerX}
-                      cy={28}
-                      r={20}
-                      fill="white"
-                      stroke={colors.border}
-                      strokeWidth={1.5}
-                    />
+                    // 写真が無い場合は空の丸ではなく頭文字を出す。
+                    // 空の丸が並ぶと「まだ何も入っていない」ように見えてしまう。
+                    <>
+                      <circle cx={centerX} cy={28} r={19} fill={colors.tint} />
+                      <text
+                        x={centerX}
+                        y={28}
+                        textAnchor="middle"
+                        dominantBaseline="central"
+                        fontSize={16}
+                        fontWeight={600}
+                        fill={colors.border}
+                      >
+                        {(node.member.firstName || node.member.lastName).trim().charAt(0)}
+                      </text>
+                    </>
+                  )}
+                  {/* 「自分」の印。左上に小さく置く */}
+                  {isSelf && (
+                    <circle cx={12} cy={12} r={4} fill="#f59e0b" />
                   )}
                   <text
                     x={centerX}
                     y={66}
                     textAnchor="middle"
-                    fontSize={15}
-                    fontWeight={700}
-                    fill="#1f2937"
+                    fontSize={14}
+                    fontWeight={600}
+                    fill="#171717"
                   >
                     {node.member.lastName} {node.member.firstName}
                   </text>
                   {years && (
-                    <text x={centerX} y={81} textAnchor="middle" fontSize={12} fill="#6b7280">
+                    <text x={centerX} y={81} textAnchor="middle" fontSize={11} fill="#a3a3a3">
                       {years}
                     </text>
                   )}
                   {age && (
-                    <text x={centerX} y={96} textAnchor="middle" fontSize={12} fill="#6b7280">
+                    <text x={centerX} y={96} textAnchor="middle" fontSize={11} fill="#a3a3a3">
                       {age}
                     </text>
                   )}
@@ -986,8 +1022,8 @@ export default function FamilyTreeView({
                       </title>
                       <circle
                         r={isCollapsed ? 12 : 10}
-                        fill={isCollapsed ? '#4f46e5' : '#ffffff'}
-                        stroke="#4f46e5"
+                        fill={isCollapsed ? '#171717' : '#ffffff'}
+                        stroke={isCollapsed ? '#171717' : '#d4d4d4'}
                         strokeWidth={1.5}
                       />
                       <text
@@ -995,7 +1031,7 @@ export default function FamilyTreeView({
                         dominantBaseline="central"
                         fontSize={isCollapsed ? 11 : 14}
                         fontWeight={700}
-                        fill={isCollapsed ? '#ffffff' : '#4f46e5'}
+                        fill={isCollapsed ? '#ffffff' : '#737373'}
                       >
                         {isCollapsed ? (hiddenCount > 99 ? '99+' : hiddenCount) : '−'}
                       </text>

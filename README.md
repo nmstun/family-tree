@@ -26,6 +26,7 @@
 - **フロントエンド**: Next.js 14 (App Router) + React 18
 - **言語**: TypeScript
 - **スタイリング**: Tailwind CSS（ボタン・入力欄・カードなどの見た目は `src/components/ui/` の共通部品に集約）
+- **アイコン**: lucide-react（線画で統一。以前は絵文字を使っていたが、環境による字形の差が大きく見た目も揃わないため置き換えた）
 - **バックエンド**: Supabase（Auth / Postgres / Realtime）
 - **ホスティング**: Vercel
 

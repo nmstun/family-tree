@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useTreeCollaborators } from '@/hooks/useTreeCollaborators'
+import { Mail, Send, Trash2 } from 'lucide-react'
 import { Alert, Button, Card, useConfirm, CONTROL_CLASS } from './ui'
 
 interface CollaboratorsPanelProps {
@@ -57,15 +58,15 @@ export default function CollaboratorsPanel({ treeId }: CollaboratorsPanelProps) 
   }
 
   if (loading) {
-    return <div className="text-sm text-gray-500">読み込み中...</div>
+    return <div className="text-[13px] text-neutral-400">読み込み中...</div>
   }
 
   return (
     <div className="space-y-6">
       {isOwner && (
         <section>
-          <h3 className="text-base md:text-lg font-bold text-gray-900 mb-2">共同編集者を招待</h3>
-          <p className="text-xs md:text-sm text-gray-600 mb-3">
+          <h3 className="mb-1.5 text-[15px] font-semibold tracking-tight text-neutral-900">共同編集者を招待</h3>
+          <p className="mb-3 text-[13px] leading-relaxed text-neutral-500">
             まだこのアプリを使ったことがない相手でも招待できます。招待メールが届き、そこからログインするとすぐに編集を始められます。
           </p>
           <form onSubmit={handleInvite} className="flex flex-col sm:flex-row gap-2">
@@ -78,7 +79,8 @@ export default function CollaboratorsPanel({ treeId }: CollaboratorsPanelProps) 
               aria-label="招待する相手のメールアドレス"
               className={CONTROL_CLASS}
             />
-            <Button type="submit" disabled={inviting} className="whitespace-nowrap">
+            <Button type="submit" disabled={inviting}>
+              <Mail aria-hidden />
               {inviting ? '招待中...' : '招待する'}
             </Button>
           </form>
@@ -91,26 +93,26 @@ export default function CollaboratorsPanel({ treeId }: CollaboratorsPanelProps) 
       )}
 
       <section>
-        <h3 className="text-base md:text-lg font-bold text-gray-900 mb-2">
-          メンバー一覧（{collaborators.length}人）
+        <h3 className="mb-2 text-[15px] font-semibold tracking-tight text-neutral-900">
+          共同編集者（{collaborators.length}人）
         </h3>
         {error && <Alert className="mb-2">{error}</Alert>}
-        <Card padding="none" className="divide-y divide-gray-100">
+        <Card padding="none" className="divide-y divide-neutral-100 overflow-hidden">
           {collaborators.map((c) => (
-            <div key={c.userId} className="px-3 md:px-4 py-2 md:py-3">
+            <div key={c.userId} className="px-3 py-2.5">
               <div className="flex items-center justify-between gap-2">
                 <div className="min-w-0">
-                  <p className="text-sm md:text-base text-gray-900 truncate">
+                  <p className="truncate text-sm font-medium text-neutral-900">
                     {c.email}
-                    {c.isMe && <span className="text-gray-400 text-xs ml-1">(自分)</span>}
+                    {c.isMe && <span className="ml-1 text-[12px] font-normal text-neutral-400">(自分)</span>}
                   </p>
-                  <p className="text-xs text-gray-500 flex items-center gap-1.5">
+                  <p className="mt-0.5 flex items-center gap-1.5 text-[12px] text-neutral-500">
                     {c.role === 'owner' ? 'オーナー' : '編集者'}
                     <span
-                      className={`inline-block px-1.5 py-0.5 rounded text-[10px] ${
+                      className={`inline-block rounded-full px-1.5 py-0.5 text-[11px] ring-1 ring-inset ${
                         c.hasLoggedIn
-                          ? 'bg-green-100 text-green-700'
-                          : 'bg-amber-100 text-amber-700'
+                          ? 'bg-emerald-50 text-emerald-700 ring-emerald-200'
+                          : 'bg-amber-50 text-amber-700 ring-amber-200'
                       }`}
                     >
                       {c.hasLoggedIn ? '参加済み' : '招待中（未ログイン）'}
@@ -120,21 +122,23 @@ export default function CollaboratorsPanel({ treeId }: CollaboratorsPanelProps) 
                 <div className="flex-shrink-0 flex items-center gap-2">
                   {isOwner && !c.hasLoggedIn && (
                     <Button
-                      variant="subtle"
+                      variant="secondary"
                       size="sm"
                       onClick={() => handleResend(c.email)}
                       disabled={resendingEmail === c.email}
                     >
+                      <Send aria-hidden />
                       {resendingEmail === c.email ? '送信中...' : '再送信'}
                     </Button>
                   )}
                   {isOwner && c.role === 'editor' && (
                     <Button
                       variant="danger"
-                      size="sm"
+                      size="icon"
+                      title="削除"
                       onClick={() => handleRemove(c.userId, c.email)}
                     >
-                      削除
+                      <Trash2 aria-hidden />
                     </Button>
                   )}
                 </div>

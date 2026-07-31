@@ -1,5 +1,6 @@
 export { default as Button } from './Button'
 export type { ButtonVariant, ButtonSize } from './Button'
+export { default as Avatar } from './Avatar'
 export { default as Card, cardClass } from './Card'
 export type { CardPadding } from './Card'
 export { default as Field, CONTROL_CLASS, CONTROL_SM_CLASS, LABEL_CLASS } from './Field'

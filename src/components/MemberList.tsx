@@ -5,7 +5,8 @@ import { FamilyMember, Marriage, ParentChildRelation } from '@/types'
 import { calculateAge, calculateGrade, formatAgeSummary } from '@/utils/age'
 import { sortMembersByName } from '@/utils/sortMembers'
 import MemberForm from './MemberForm'
-import { Button, Card, EmptyState, useConfirm, CONTROL_CLASS } from './ui'
+import { Search, Star, Pencil, Trash2, Users } from 'lucide-react'
+import { Avatar, Button, Card, EmptyState, useConfirm, CONTROL_CLASS } from './ui'
 
 const OTOSHIDAMA_MAX_AGE = 22
 
@@ -90,36 +91,42 @@ export default function MemberList({
   }
 
   if (members.length === 0) {
-    return <EmptyState>メンバーはまだ追加されていません</EmptyState>
+    return <EmptyState icon={<Users />}>メンバーはまだ追加されていません</EmptyState>
   }
 
   return (
     <div>
-      <input
-        type="text"
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        placeholder="名前で検索..."
-        aria-label="メンバーを名前で検索"
-        className={`${CONTROL_CLASS} mb-2`}
-      />
-      <label className="flex items-center gap-1.5 mb-2 md:mb-3 text-xs md:text-sm text-gray-600 cursor-pointer w-fit">
+      <div className="relative mb-2">
+        <Search
+          className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400"
+          aria-hidden
+        />
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="名前で検索"
+          aria-label="メンバーを名前で検索"
+          className={`${CONTROL_CLASS} pl-9`}
+        />
+      </div>
+      <label className="mb-3 flex w-fit cursor-pointer items-center gap-2 text-[13px] text-neutral-500 transition-colors hover:text-neutral-900">
         <input
           type="checkbox"
           checked={otoshidamaOnly}
           onChange={(e) => setOtoshidamaOnly(e.target.checked)}
-          className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+          className="rounded border-neutral-300 text-neutral-900 focus:ring-neutral-900/20"
         />
-        🧧 お年玉対象のみ表示（{OTOSHIDAMA_MAX_AGE}歳以下）
+        お年玉対象のみ（{OTOSHIDAMA_MAX_AGE}歳以下）
       </label>
 
       {filteredMembers.length === 0 ? (
-        <EmptyState>該当するメンバーが見つかりません</EmptyState>
+        <EmptyState icon={<Search />}>該当するメンバーが見つかりません</EmptyState>
       ) : (
-        <Card padding="none" className="divide-y divide-gray-100">
+        <Card padding="none" className="divide-y divide-neutral-100 overflow-hidden">
           {filteredMembers.map((member) =>
             editingId === member.id ? (
-              <div key={member.id} className="p-3 md:p-4">
+              <div key={member.id} className="bg-neutral-50 p-3">
                 <MemberForm
                   initialMember={member}
                   onSubmit={(updates) => {
@@ -130,42 +137,31 @@ export default function MemberList({
                 />
               </div>
             ) : (
+              // 操作ボタンは普段は控えめにし、hover/フォーカス時にはっきりさせる。
+              // タッチ端末には hover が無いので、隠さず薄く出したままにする。
               <div
                 key={member.id}
-                className="flex items-center gap-3 px-3 md:px-4 py-2 md:py-2.5 hover:bg-gray-50 transition"
+                className="group flex items-center gap-3 px-3 py-2 transition-colors hover:bg-neutral-50"
               >
-                <div className="flex-shrink-0">
-                  {member.photo ? (
-                    <img
-                      src={member.photo}
-                      alt=""
-                      className="h-9 w-9 md:h-10 md:w-10 object-cover rounded-full"
-                    />
-                  ) : (
-                    <div className="h-9 w-9 md:h-10 md:w-10 bg-gray-200 rounded-full flex items-center justify-center">
-                      <span className="text-base md:text-lg" aria-hidden>
-                        {member.gender === 'female' ? '👩' : '👨'}
-                      </span>
-                    </div>
-                  )}
-                </div>
+                <Avatar photo={member.photo} name={member.firstName || member.lastName} />
 
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm md:text-base font-medium text-gray-900 truncate">
+                <div className="min-w-0 flex-1">
+                  <p className="flex items-center gap-1.5 truncate text-sm font-medium text-neutral-900">
                     {fullName(member)}
                     {member.id === selfMemberId && (
-                      <span className="ml-1.5 text-[10px] md:text-xs font-normal bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full align-middle">
-                        ⭐ 自分
+                      <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-700 ring-1 ring-inset ring-amber-200">
+                        <Star className="h-2.5 w-2.5 fill-current" aria-hidden />
+                        自分
                       </span>
                     )}
                   </p>
-                  <p className="text-xs text-gray-500 truncate">{memberSummary(member)}</p>
+                  <p className="truncate text-[12px] text-neutral-500">{memberSummary(member)}</p>
                 </div>
 
-                <div className="flex-shrink-0 flex gap-1.5 md:gap-2">
+                <div className="flex shrink-0 items-center gap-0.5 opacity-60 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
                   <Button
-                    variant={member.id === selfMemberId ? 'subtle' : 'secondary'}
-                    size="sm"
+                    variant="ghost"
+                    size="icon"
                     onClick={() => onSetSelfMember(member.id === selfMemberId ? null : member.id)}
                     aria-pressed={member.id === selfMemberId}
                     title={
@@ -173,19 +169,25 @@ export default function MemberList({
                         ? '「自分」の設定を解除'
                         : 'このメンバーを自分として設定'
                     }
-                    className={
-                      member.id === selfMemberId
-                        ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
-                        : ''
-                    }
+                    className={member.id === selfMemberId ? 'text-amber-500 hover:text-amber-600' : ''}
                   >
-                    {member.id === selfMemberId ? '★' : '☆'}
+                    <Star className={member.id === selfMemberId ? 'fill-current' : ''} aria-hidden />
                   </Button>
-                  <Button variant="subtle" size="sm" onClick={() => setEditingId(member.id)}>
-                    編集
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    title="編集"
+                    onClick={() => setEditingId(member.id)}
+                  >
+                    <Pencil aria-hidden />
                   </Button>
-                  <Button variant="danger" size="sm" onClick={() => handleDelete(member)}>
-                    削除
+                  <Button
+                    variant="danger"
+                    size="icon"
+                    title="削除"
+                    onClick={() => handleDelete(member)}
+                  >
+                    <Trash2 aria-hidden />
                   </Button>
                 </div>
               </div>

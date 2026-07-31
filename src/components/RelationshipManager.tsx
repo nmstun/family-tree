@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react'
 import { FamilyMember, Marriage, ParentChildRelation } from '@/types'
 import { wouldCreateCycle } from '@/utils/familyTreeValidation'
 import { sortMembersByName } from '@/utils/sortMembers'
+import { Heart, GitBranch, Trash2, Pencil, Check, X, Users } from 'lucide-react'
 import {
   Alert,
   Button,
@@ -148,7 +149,7 @@ export default function RelationshipManager({
 
   if (members.length < 2) {
     return (
-      <EmptyState>
+      <EmptyState icon={<Users />}>
         関係を設定するには、まず「メンバー」タブで2人以上のメンバーを追加してください
       </EmptyState>
     )
@@ -158,7 +159,10 @@ export default function RelationshipManager({
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-8">
       {/* 配偶者関係 */}
       <section>
-        <h3 className="text-base md:text-lg font-bold text-gray-900 mb-2 md:mb-3">💍 配偶者関係</h3>
+        <h3 className="mb-2.5 flex items-center gap-1.5 text-[15px] font-semibold tracking-tight text-neutral-900">
+          <Heart className="h-4 w-4 text-neutral-400" aria-hidden />
+          配偶者関係
+        </h3>
         <Card className="mb-3 md:mb-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Field label="配偶者A" htmlFor="spouse1">
@@ -209,11 +213,9 @@ export default function RelationshipManager({
               padding="row"
               className="flex items-center justify-between gap-2 flex-wrap"
             >
-              <div className="text-sm text-gray-800 min-w-0 flex items-center gap-2 flex-wrap">
+              <div className="flex min-w-0 flex-wrap items-center gap-2 text-[13px] text-neutral-700">
                 <span className="font-medium">{displayName(memberMap.get(m.spouse1Id))}</span>
-                <span className="text-gray-400" aria-hidden>
-                  ⚭
-                </span>
+                <Heart className="h-3 w-3 shrink-0 text-neutral-300" aria-hidden />
                 <span className="font-medium">{displayName(memberMap.get(m.spouse2Id))}</span>
                 {editingMarriageId === m.id ? (
                   <input
@@ -225,47 +227,55 @@ export default function RelationshipManager({
                   />
                 ) : (
                   m.marriageDate && (
-                    <span className="text-xs text-gray-500">
+                    <span className="text-[12px] text-neutral-400">
                       ({new Date(m.marriageDate).toLocaleDateString('ja-JP')})
                     </span>
                   )
                 )}
               </div>
-              <div className="flex-shrink-0 flex gap-2">
+              <div className="flex shrink-0 items-center gap-0.5">
                 {editingMarriageId === m.id ? (
                   <>
                     <Button
-                      variant="subtle"
-                      size="sm"
+                      variant="ghost"
+                      size="icon"
+                      title="保存"
                       onClick={() => {
                         onUpdateMarriage(m.id, editMarriageDate)
                         setEditingMarriageId(null)
                       }}
                     >
-                      保存
+                      <Check aria-hidden />
                     </Button>
                     <Button
-                      variant="secondary"
-                      size="sm"
+                      variant="ghost"
+                      size="icon"
+                      title="キャンセル"
                       onClick={() => setEditingMarriageId(null)}
                     >
-                      キャンセル
+                      <X aria-hidden />
                     </Button>
                   </>
                 ) : (
                   <>
                     <Button
-                      variant="subtle"
-                      size="sm"
+                      variant="ghost"
+                      size="icon"
+                      title="結婚日を編集"
                       onClick={() => {
                         setEditingMarriageId(m.id)
                         setEditMarriageDate(m.marriageDate ?? '')
                       }}
                     >
-                      編集
+                      <Pencil aria-hidden />
                     </Button>
-                    <Button variant="danger" size="sm" onClick={() => handleRemoveMarriage(m)}>
-                      削除
+                    <Button
+                      variant="danger"
+                      size="icon"
+                      title="削除"
+                      onClick={() => handleRemoveMarriage(m)}
+                    >
+                      <Trash2 aria-hidden />
                     </Button>
                   </>
                 )}
@@ -277,8 +287,9 @@ export default function RelationshipManager({
 
       {/* 親子関係 */}
       <section>
-        <h3 className="text-base md:text-lg font-bold text-gray-900 mb-2 md:mb-3">
-          👨‍👩‍👧 親子関係
+        <h3 className="mb-2.5 flex items-center gap-1.5 text-[15px] font-semibold tracking-tight text-neutral-900">
+          <GitBranch className="h-4 w-4 text-neutral-400" aria-hidden />
+          親子関係
         </h3>
         <Card className="mb-3 md:mb-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -321,20 +332,19 @@ export default function RelationshipManager({
               padding="row"
               className="flex items-center justify-between gap-2"
             >
-              <div className="text-sm text-gray-800 min-w-0">
+              <div className="min-w-0 text-[13px] text-neutral-700">
                 <span className="font-medium">{displayName(memberMap.get(r.parentId))}</span>
-                <span className="mx-1.5 text-gray-400" aria-hidden>
-                  →
-                </span>
+                <span className="mx-1.5 text-neutral-300" aria-hidden>→</span>
                 <span className="font-medium">{displayName(memberMap.get(r.childId))}</span>
               </div>
               <Button
                 variant="danger"
-                size="sm"
-                className="flex-shrink-0"
+                size="icon"
+                title="削除"
+                className="shrink-0"
                 onClick={() => handleRemoveParentChild(r)}
               >
-                削除
+                <Trash2 aria-hidden />
               </Button>
             </Card>
           ))}

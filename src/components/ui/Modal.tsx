@@ -12,8 +12,7 @@ interface ModalProps {
 }
 
 // モーダルの外枠。写真トリミングと確認ダイアログで共通の見た目・操作にする。
-// Escキーと背景クリックで閉じられるのは以前はどちらも無かった挙動で、
-// ここに集約したことで両方のモーダルに一度に行き渡る。
+// Escキーと背景クリックで閉じられる。
 export default function Modal({ title, onClose, children, footer, className }: ModalProps) {
   const backdropRef = useRef<HTMLDivElement>(null)
 
@@ -37,17 +36,22 @@ export default function Modal({ title, onClose, children, footer, className }: M
       role="dialog"
       aria-modal="true"
       aria-label={title}
-      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/40 p-4 backdrop-blur-[2px]"
       // クリックの「押し始め」が背景そのものだった場合だけ閉じる。
       // トリミングのドラッグ操作が枠外で終わったときに閉じてしまうのを防ぐ。
       onMouseDown={(e) => {
         if (e.target === backdropRef.current) onClose()
       }}
     >
-      <div className={cn('bg-white rounded-lg shadow-xl w-full max-w-sm p-4 md:p-6', className)}>
-        <h3 className="text-base md:text-lg font-bold text-gray-900 mb-3">{title}</h3>
+      <div
+        className={cn(
+          'w-full max-w-sm rounded-2xl bg-white p-5 shadow-xl ring-1 ring-neutral-900/5',
+          className
+        )}
+      >
+        <h3 className="mb-2 text-[15px] font-semibold tracking-tight text-neutral-900">{title}</h3>
         {children}
-        {footer && <div className="flex gap-2 mt-4">{footer}</div>}
+        {footer && <div className="mt-5 flex gap-2">{footer}</div>}
       </div>
     </div>
   )

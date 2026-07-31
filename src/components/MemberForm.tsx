@@ -205,24 +205,24 @@ export default function MemberForm({ initialMember, onSubmit, onCancel }: Member
           onValueChange={setDeathDateInput}
         />
 
-        <div className="mb-4">
+        <div className="mb-3.5">
           <label className={LABEL_CLASS}>写真</label>
           <input
             ref={photoInputRef}
             type="file"
             accept="image/*"
             onChange={handlePhotoChange}
-            className="block w-full mt-1 md:mt-2 text-sm text-gray-500 file:mr-2 md:file:mr-4 file:py-1 md:file:py-2 file:px-3 md:file:px-4 file:rounded-lg file:border-0 file:text-xs md:file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"
+            className="mt-1.5 block w-full text-[13px] text-neutral-500 file:mr-3 file:rounded-lg file:border file:border-neutral-200 file:bg-white file:px-3 file:py-1.5 file:text-[13px] file:font-medium file:text-neutral-700 hover:file:bg-neutral-50"
           />
           {photoPreview && (
             <div className="mt-3 flex items-center gap-3">
               <img
                 src={photoPreview}
                 alt="選択中の写真のプレビュー"
-                className="h-20 w-20 md:h-32 md:w-32 object-cover rounded-lg"
+                className="h-20 w-20 rounded-xl object-cover ring-1 ring-neutral-200"
               />
               <div className="flex flex-col gap-2">
-                <Button variant="subtle" size="sm" onClick={handleRecrop}>
+                <Button variant="secondary" size="sm" onClick={handleRecrop}>
                   トリミングし直す
                 </Button>
                 <Button variant="danger" size="sm" onClick={handleRemovePhoto}>
