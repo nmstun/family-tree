@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useTreeCollaborators } from '@/hooks/useTreeCollaborators'
 import { Mail, Send, Trash2 } from 'lucide-react'
-import { Alert, Button, Card, useConfirm, CONTROL_CLASS } from './ui'
+import { Alert, Badge, Button, Card, SectionHeading, useConfirm, CONTROL_CLASS } from './ui'
 
 interface CollaboratorsPanelProps {
   treeId: string
@@ -65,7 +65,7 @@ export default function CollaboratorsPanel({ treeId }: CollaboratorsPanelProps) 
     <div className="space-y-6">
       {isOwner && (
         <section>
-          <h3 className="mb-1.5 text-[15px] font-semibold tracking-tight text-neutral-900">共同編集者を招待</h3>
+          <SectionHeading as="h3">共同編集者を招待</SectionHeading>
           <p className="mb-3 text-[13px] leading-relaxed text-neutral-500">
             まだこのアプリを使ったことがない相手でも招待できます。招待メールが届き、そこからログインするとすぐに編集を始められます。
           </p>
@@ -93,9 +93,7 @@ export default function CollaboratorsPanel({ treeId }: CollaboratorsPanelProps) 
       )}
 
       <section>
-        <h3 className="mb-2 text-[15px] font-semibold tracking-tight text-neutral-900">
-          共同編集者（{collaborators.length}人）
-        </h3>
+        <SectionHeading as="h3">共同編集者（{collaborators.length}人）</SectionHeading>
         {error && <Alert className="mb-2">{error}</Alert>}
         <Card padding="none" className="divide-y divide-neutral-100 overflow-hidden">
           {collaborators.map((c) => (
@@ -108,15 +106,9 @@ export default function CollaboratorsPanel({ treeId }: CollaboratorsPanelProps) 
                   </p>
                   <p className="mt-0.5 flex items-center gap-1.5 text-[12px] text-neutral-500">
                     {c.role === 'owner' ? 'オーナー' : '編集者'}
-                    <span
-                      className={`inline-block rounded-full px-1.5 py-0.5 text-[11px] ring-1 ring-inset ${
-                        c.hasLoggedIn
-                          ? 'bg-emerald-50 text-emerald-700 ring-emerald-200'
-                          : 'bg-amber-50 text-amber-700 ring-amber-200'
-                      }`}
-                    >
+                    <Badge tone={c.hasLoggedIn ? 'success' : 'warning'}>
                       {c.hasLoggedIn ? '参加済み' : '招待中（未ログイン）'}
-                    </span>
+                    </Badge>
                   </p>
                 </div>
                 <div className="flex-shrink-0 flex items-center gap-2">

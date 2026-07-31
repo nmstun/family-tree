@@ -48,7 +48,7 @@ export function calculateGrade(
 }
 
 // 精度に応じて日付の表示形式を切り替える（不明な月日は表示に出さない）
-export function formatDateByPrecision(dateStr: string, precision: DatePrecision): string {
+function formatDateByPrecision(dateStr: string, precision: DatePrecision): string {
   const d = new Date(dateStr)
   if (Number.isNaN(d.getTime())) return ''
 

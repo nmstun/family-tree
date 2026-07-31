@@ -18,7 +18,7 @@ import {
   Upload,
   type LucideIcon,
 } from 'lucide-react'
-import { Alert, Button, Card, useConfirm, cn } from './ui'
+import { Alert, Button, Card, SectionHeading, useConfirm, cn } from './ui'
 
 type TabId = 'members' | 'relations' | 'view' | 'share' | 'export'
 
@@ -31,12 +31,6 @@ const TABS: { id: TabId; label: string; Icon: LucideIcon }[] = [
   { id: 'share', label: '共有', Icon: UserPlus },
   { id: 'export', label: 'データ', Icon: Download },
 ]
-
-function SectionHeading({ children }: { children: React.ReactNode }) {
-  return (
-    <h2 className="mb-3 text-[15px] font-semibold tracking-tight text-neutral-900">{children}</h2>
-  )
-}
 
 export default function FamilyTreeApp() {
   const {

@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react'
 import { FamilyMember, Marriage, ParentChildRelation } from '@/types'
 import { wouldCreateCycle } from '@/utils/familyTreeValidation'
 import { sortMembersByName } from '@/utils/sortMembers'
+import { displayName } from '@/utils/memberName'
 import { Heart, GitBranch, Trash2, Pencil, Check, X, Users } from 'lucide-react'
 import {
   Alert,
@@ -11,6 +12,7 @@ import {
   Card,
   EmptyState,
   Field,
+  SectionHeading,
   useConfirm,
   CONTROL_CLASS,
   CONTROL_SM_CLASS,
@@ -25,11 +27,6 @@ interface RelationshipManagerProps {
   onRemoveMarriage: (id: string) => void
   onAddParentChild: (parentId: string, childId: string) => void
   onRemoveParentChild: (parentId: string, childId: string) => void
-}
-
-function displayName(member?: FamilyMember) {
-  if (!member) return '（不明なメンバー）'
-  return `${member.lastName} ${member.firstName}`
 }
 
 // 入力チェックは副作用を持たない関数に切り出しておく。
@@ -159,10 +156,7 @@ export default function RelationshipManager({
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-8">
       {/* 配偶者関係 */}
       <section>
-        <h3 className="mb-2.5 flex items-center gap-1.5 text-[15px] font-semibold tracking-tight text-neutral-900">
-          <Heart className="h-4 w-4 text-neutral-400" aria-hidden />
-          配偶者関係
-        </h3>
+        <SectionHeading as="h3" icon={<Heart aria-hidden />}>配偶者関係</SectionHeading>
         <Card className="mb-3 md:mb-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Field label="配偶者A" htmlFor="spouse1">
@@ -287,10 +281,7 @@ export default function RelationshipManager({
 
       {/* 親子関係 */}
       <section>
-        <h3 className="mb-2.5 flex items-center gap-1.5 text-[15px] font-semibold tracking-tight text-neutral-900">
-          <GitBranch className="h-4 w-4 text-neutral-400" aria-hidden />
-          親子関係
-        </h3>
+        <SectionHeading as="h3" icon={<GitBranch aria-hidden />}>親子関係</SectionHeading>
         <Card className="mb-3 md:mb-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Field label="親" htmlFor="parent">

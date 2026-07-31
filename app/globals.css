@@ -38,7 +38,7 @@
   }
 
   /* 見出しの高さは固定する。ここが変わると分割位置の計算とずれる
-     （FamilyTreeView.tsx の PRINT_TITLE_MM と同じ値にすること） */
+     （utils/treeExport.ts の PRINT_TITLE_MM と同じ値にすること） */
   .print-page-head {
     height: 14mm;
     display: flex;

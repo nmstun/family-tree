@@ -5,6 +5,15 @@ import { createPortal } from 'react-dom'
 import { FamilyMember, Marriage, ParentChildRelation } from '@/types'
 import { computeFamilyTreeLayout, NODE_WIDTH, NODE_HEIGHT, V_GAP } from '@/utils/treeLayout'
 import { calculateAge } from '@/utils/age'
+import { fullName, initial } from '@/utils/memberName'
+import { useCollapsibleTree } from '@/hooks/useCollapsibleTree'
+import {
+  buildTreePngBlob,
+  computePrintSlices,
+  contentBoxOf,
+  saveTreeAsPdf,
+  type PrintSlice,
+} from '@/utils/treeExport'
 import {
   ZoomIn,
   ZoomOut,
@@ -31,8 +40,6 @@ interface FamilyTreeViewProps {
   selfMemberId?: string | null
 }
 
-const COLLAPSE_STORAGE_PREFIX = 'familyTree:collapsed:'
-
 // 大きな家系図でも全体を1画面に収められるよう、下限は思い切って小さくする。
 // このあたりまで縮むと文字は読めないが、全体の形と広がりは掴める。
 const MIN_SCALE = 0.1
@@ -40,65 +47,6 @@ const MAX_SCALE = 2
 // ミニマップ（右下に出す全体図）の最大表示サイズ
 const MINIMAP_MAX_PX = 130
 const SCALE_STEP = 0.1
-
-// 印刷（PDF保存）時の用紙まわりの寸法。globals.css の @media print と対応させる。
-//
-// 以前は家系図の縦横比に合わせた用紙サイズ（例: 210mm × 677mm）を @page size で
-// 指定していたが、Safari は @page の size を無視して用紙をA4のままにするため、
-// 実機では効かず横に大きな余白が残っていた。
-// そのため用紙はA4固定とし、家系図のほうを用紙の幅いっぱいに拡大したうえで
-// 用紙の高さごとに分割する（＝ページを分ける）方式にする。
-const PRINT_MARGIN_MM = 6
-// 見出し（家系図名と日付）の高さ。globals.css 側と同じ値にすること。
-const PRINT_TITLE_MM = 14
-const A4_WIDTH_MM = 210
-const A4_HEIGHT_MM = 297
-// PDFに埋め込む画像の解像度。上げるほど綺麗だがファイルも大きくなる。
-const PDF_DPI = 200
-// 1ページ内で家系図に使える領域の「横幅 ÷ 高さ」。分割する高さの計算に使う。
-const PRINT_CONTENT_ASPECT =
-  (A4_WIDTH_MM - PRINT_MARGIN_MM * 2) /
-  (A4_HEIGHT_MM - PRINT_MARGIN_MM * 2 - PRINT_TITLE_MM)
-// ノードのドロップシャドウ（node-shadow フィルタ）が figure の外側へ広がるぶんの余裕。
-// フィルタ領域は各ノードの上下左右に20%ずつ取っているので、その最大値に合わせる。
-const PRINT_SHADOW_PAD = Math.ceil(NODE_WIDTH * 0.2)
-
-type PrintSlice = { x: number; y: number; width: number; height: number }
-
-/**
- * 家系図を用紙の幅いっぱいに拡大したうえで、用紙1枚に入る高さごとに切り分ける。
- * 1枚に収めようとすると、家系図（縦長）と用紙（A4）の縦横比の差がそのまま
- * 余白になってしまうため（実データで横が約58%余っていた）、ページを分けて
- * 幅を使い切る。
- */
-function computePrintSlices(box: {
-  x: number
-  y: number
-  width: number
-  height: number
-}): PrintSlice[] {
-  if (box.width <= 0 || box.height <= 0) return []
-  const pad = PRINT_SHADOW_PAD
-  const x = box.x - pad
-  const width = box.width + pad * 2
-  const height = box.height + pad * 2
-  // 幅を用紙いっぱいに使ったとき、1ページに収まる家系図の高さ
-  const sliceHeight = width / PRINT_CONTENT_ASPECT
-  if (sliceHeight >= height) {
-    return [{ x, y: box.y - pad, width, height: sliceHeight }]
-  }
-  // ページの境目でカードが分断されると読めなくなるため、隣のページと少し重ねる。
-  // カード1枚ぶんを重ねておけば、切れたカードは次のページに必ず丸ごと現れる。
-  const overlap = Math.max(NODE_WIDTH, NODE_HEIGHT)
-  const step = sliceHeight - overlap
-  const count = Math.max(1, Math.ceil((height - overlap) / step))
-  return Array.from({ length: count }, (_, i) => ({
-    x,
-    y: box.y - pad + i * step,
-    width,
-    height: sliceHeight,
-  }))
-}
 
 // カードは白地にして、性別は枠線とアイコンの色だけで示す。
 // 以前は面全体を性別色で塗っていたため、人数が増えるほど画面が
@@ -198,108 +146,22 @@ export default function FamilyTreeView({
   // スクロールのたびに再レンダリングすると73人ぶんのノードを毎回作り直すことになるため、
   // stateには持たせず、この矩形の属性だけを直接書き換える。
   const viewportRectRef = useRef<SVGRectElement>(null)
-  const [collapsedRootIds, setCollapsedRootIds] = useState<Set<string>>(() => new Set())
   const containerRef = useRef<HTMLDivElement>(null)
   const svgRef = useRef<SVGSVGElement>(null)
   const hasAutoFitRef = useRef(false)
 
-  // 折りたたみ状態はこのブラウザだけに保存する（他の共同編集者には影響しない）。
-  // 読み込みはマウント時（treeId確定時）の1回のみ。保存は変更時に直接書き込む
-  // （読み込み・保存の両方をuseEffectにすると、マウント時に読み込み直後の
-  // 古い状態で保存Effectが走り、直後にlocalStorageを空で上書きしてしまう）。
-  useEffect(() => {
-    if (!treeId) return
-    try {
-      const raw = localStorage.getItem(COLLAPSE_STORAGE_PREFIX + treeId)
-      setCollapsedRootIds(raw ? new Set(JSON.parse(raw)) : new Set())
-    } catch {
-      setCollapsedRootIds(new Set())
-    }
-  }, [treeId])
-
-  const persistCollapsed = (next: Set<string>) => {
-    if (!treeId) return
-    try {
-      localStorage.setItem(COLLAPSE_STORAGE_PREFIX + treeId, JSON.stringify(Array.from(next)))
-    } catch {
-      // プライベートブラウズなどlocalStorageが使えない環境では諦める
-    }
-  }
-
-  // 「このメンバーを起点に折りたたんだ場合に隠れるメンバー」の集合を、
-  // 子を持つメンバーごとに事前計算しておく。子(down)と配偶者(spouse)を
-  // 交互にたどり、選択したメンバーより下の家族グループ全体を1セットにまとめる。
-  const { childrenOf, hiddenSetByRoot } = useMemo(() => {
-    const childrenMap = new Map<string, string[]>()
-    parentChildRelations.forEach((r) => {
-      if (!childrenMap.has(r.parentId)) childrenMap.set(r.parentId, [])
-      childrenMap.get(r.parentId)!.push(r.childId)
-    })
-    const spouseMap = new Map<string, string[]>()
-    marriages.forEach((m) => {
-      if (!spouseMap.has(m.spouse1Id)) spouseMap.set(m.spouse1Id, [])
-      spouseMap.get(m.spouse1Id)!.push(m.spouse2Id)
-      if (!spouseMap.has(m.spouse2Id)) spouseMap.set(m.spouse2Id, [])
-      spouseMap.get(m.spouse2Id)!.push(m.spouse1Id)
-    })
-
-    const hiddenByRoot = new Map<string, Set<string>>()
-    childrenMap.forEach((_, rootId) => {
-      const hidden = new Set<string>()
-      const queue = [...(childrenMap.get(rootId) ?? [])]
-      while (queue.length > 0) {
-        const id = queue.shift()!
-        if (hidden.has(id)) continue
-        hidden.add(id)
-        ;(spouseMap.get(id) ?? []).forEach((s) => {
-          if (!hidden.has(s)) queue.push(s)
-        })
-        ;(childrenMap.get(id) ?? []).forEach((c) => {
-          if (!hidden.has(c)) queue.push(c)
-        })
-      }
-      hiddenByRoot.set(rootId, hidden)
-    })
-
-    return { childrenOf: childrenMap, hiddenSetByRoot: hiddenByRoot }
-  }, [parentChildRelations, marriages])
-
-  const hiddenMemberIds = useMemo(() => {
-    const hidden = new Set<string>()
-    collapsedRootIds.forEach((rootId) => {
-      hiddenSetByRoot.get(rootId)?.forEach((id) => hidden.add(id))
-    })
-    return hidden
-  }, [collapsedRootIds, hiddenSetByRoot])
-
-  const visibleMembers = useMemo(
-    () => members.filter((m) => !hiddenMemberIds.has(m.id)),
-    [members, hiddenMemberIds]
-  )
-  const visibleMarriages = useMemo(
-    () =>
-      marriages.filter(
-        (m) => !hiddenMemberIds.has(m.spouse1Id) && !hiddenMemberIds.has(m.spouse2Id)
-      ),
-    [marriages, hiddenMemberIds]
-  )
-  const visibleRelations = useMemo(
-    () =>
-      parentChildRelations.filter(
-        (r) => !hiddenMemberIds.has(r.parentId) && !hiddenMemberIds.has(r.childId)
-      ),
-    [parentChildRelations, hiddenMemberIds]
-  )
-
-  const toggleCollapse = (memberId: string) => {
-    setCollapsedRootIds((prev) => {
-      const next = new Set(prev)
-      if (next.has(memberId)) next.delete(memberId)
-      else next.add(memberId)
-      persistCollapsed(next)
-      return next
-    })
-  }
+  // 折りたたみ（あるメンバーより下の子孫グループを隠す）はフックに切り出してある
+  const {
+    collapsedRootIds,
+    childrenOf,
+    hiddenSetByRoot,
+    hiddenMemberIds,
+    visibleMembers,
+    visibleMarriages,
+    visibleRelations,
+    toggleCollapse,
+    expandAll,
+  } = useCollapsibleTree(treeId, members, marriages, parentChildRelations)
 
   const layout = useMemo(
     () => computeFamilyTreeLayout(visibleMembers, visibleMarriages, visibleRelations),
@@ -436,213 +298,22 @@ export default function FamilyTreeView({
     })
   }
 
-  // 家系図全体をPNG画像としてクリップボードにコピーする。画面のズームやスクロール
-  // 位置に関わらず、SVGの実寸（viewBox基準）で高解像度に描画することで、
-  // 貼り付け先で印刷やLINE共有にも耐えられる画質にする。写真はすでにbase64の
-  // data URLで埋め込まれているため、canvasへの描画がクロスオリジンで汚染される
-  // 心配はない。
-  //
-  // svgRef.current の width/height 属性は画面上のズーム倍率（scale）がかかった値になっている
-  // （見た目のズームが小さいと、この属性値も小さくなる）。ここをそのままシリアライズすると、
-  // ブラウザはSVGをその小さいサイズで一度ラスタライズしてからcanvasに引き伸ばすため、
-  // ズームが小さいときほど書き出し画像がぼやける。そのため複製したSVGのwidth/heightを
-  // 書き出し用の実解像度に上書きしてから使う。
-  //
-  // 画像の生成（SVGの読み込み・canvas描画）は非同期のため、生成し終わってから
-  // clipboard.write を呼ぶと、クリックのユーザー操作から時間が経ちすぎて
-  // ブラウザに書き込みを拒否されることがある。そのため、生成中のPromiseを
-  // ClipboardItem に渡す形で clipboard.write 自体はクリック直後（同期的）に
-  // 呼び出し、ユーザー操作の有効期限内に書き込みを開始させる。
-  const buildTreePngBlob = async (): Promise<Blob> => {
-    const svgEl = svgRef.current
-    if (!svgEl) throw new Error('家系図が見つかりません')
+  // 以下は書き出しの入り口。実処理は utils/treeExport.ts にある。
+  // ここでは進行中・エラーといった画面の状態だけを扱う。
 
-    // canvasのサイズ上限（ブラウザにより異なるが概ね1万数千px四方）を超えないよう、
-    // 大きな家系図では倍率を落として安全側に倒す
-    const MAX_EXPORT_DIMENSION = 8000
-    const exportScale = Math.min(
-      3,
-      MAX_EXPORT_DIMENSION / svgWidth,
-      MAX_EXPORT_DIMENSION / svgHeight
-    )
-    const exportWidth = Math.round(svgWidth * exportScale)
-    const exportHeight = Math.round(svgHeight * exportScale)
-
-    const clone = svgEl.cloneNode(true) as SVGSVGElement
-    clone.setAttribute('width', String(exportWidth))
-    clone.setAttribute('height', String(exportHeight))
-
-    const svgString = new XMLSerializer().serializeToString(clone)
-    const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' })
-    const svgUrl = URL.createObjectURL(svgBlob)
-
-    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
-      const img = new Image()
-      img.onload = () => resolve(img)
-      img.onerror = reject
-      img.src = svgUrl
-    })
-
-    const canvas = document.createElement('canvas')
-    canvas.width = exportWidth
-    canvas.height = exportHeight
-    const ctx = canvas.getContext('2d')
-    if (!ctx) throw new Error('このブラウザは画像のコピーに対応していません')
-
-    ctx.fillStyle = '#ffffff'
-    ctx.fillRect(0, 0, canvas.width, canvas.height)
-    ctx.drawImage(image, 0, 0, canvas.width, canvas.height)
-    URL.revokeObjectURL(svgUrl)
-
-    const pngBlob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'))
-    if (!pngBlob) throw new Error('画像の生成に失敗しました')
-    return pngBlob
-  }
-
-  // 家系図の指定した範囲（1ページぶん）を、A4用紙1枚ぶんのcanvasに描く。
-  // 見出しはcanvasに直接描く。PDFの標準フォントは日本語を持っていないため、
-  // PDF側に文字として入れると文字化けしてしまう。
-  const renderPageToCanvas = async (
-    slice: PrintSlice,
-    pageIndex: number,
-    pageCount: number
-  ): Promise<HTMLCanvasElement> => {
-    const svgEl = svgRef.current
-    if (!svgEl) throw new Error('家系図が見つかりません')
-
-    const mmToPx = (mm: number) => Math.round((mm / 25.4) * PDF_DPI)
-    const pageW = mmToPx(A4_WIDTH_MM)
-    const pageH = mmToPx(A4_HEIGHT_MM)
-    const margin = mmToPx(PRINT_MARGIN_MM)
-    const titleH = mmToPx(PRINT_TITLE_MM)
-    const treeW = pageW - margin * 2
-    const treeH = pageH - margin * 2 - titleH
-
-    // 画面表示用のSVGを複製し、このページに写す範囲だけを viewBox で切り出す
-    const clone = svgEl.cloneNode(true) as SVGSVGElement
-    clone.setAttribute('viewBox', `${slice.x} ${slice.y} ${slice.width} ${slice.height}`)
-    clone.setAttribute('preserveAspectRatio', 'xMidYMin meet')
-    clone.setAttribute('width', String(treeW))
-    clone.setAttribute('height', String(treeH))
-    // 操作用の折りたたみボタンはPDFには載せない
-    clone.querySelectorAll('.print-hide').forEach((el) => el.remove())
-
-    const svgUrl = URL.createObjectURL(
-      new Blob([new XMLSerializer().serializeToString(clone)], {
-        type: 'image/svg+xml;charset=utf-8',
-      })
-    )
-    try {
-      const image = await new Promise<HTMLImageElement>((resolve, reject) => {
-        const img = new Image()
-        img.onload = () => resolve(img)
-        img.onerror = reject
-        img.src = svgUrl
-      })
-
-      const canvas = document.createElement('canvas')
-      canvas.width = pageW
-      canvas.height = pageH
-      const ctx = canvas.getContext('2d')
-      if (!ctx) throw new Error('このブラウザはPDFの作成に対応していません')
-
-      ctx.fillStyle = '#ffffff'
-      ctx.fillRect(0, 0, pageW, pageH)
-
-      const titleFont = Math.round(titleH * 0.34)
-      ctx.fillStyle = '#111827'
-      ctx.font = `bold ${titleFont}px sans-serif`
-      ctx.textBaseline = 'middle'
-      ctx.fillText(treeName ?? '家系図', margin, margin + titleH / 2)
-
-      ctx.fillStyle = '#6b7280'
-      ctx.font = `${Math.round(titleFont * 0.8)}px sans-serif`
-      ctx.textAlign = 'right'
-      ctx.fillText(
-        `${new Date().toLocaleDateString('ja-JP')} 時点 ／ ${pageIndex + 1} / ${pageCount}`,
-        pageW - margin,
-        margin + titleH / 2
-      )
-      ctx.textAlign = 'left'
-
-      ctx.drawImage(image, margin, margin + titleH, treeW, treeH)
-      return canvas
-    } finally {
-      URL.revokeObjectURL(svgUrl)
-    }
-  }
-
-  // PDFファイルとして保存する。
-  // 印刷ダイアログ経由（window.print）はスマホ、とくにiOSでは
-  // ファイルとして保存しづらいため、PDFそのものを作ってダウンロードさせる。
-  const handleSavePdf = async () => {
-    if (savingPdf) return
-    setSavingPdf(true)
-    setPdfError(null)
-    try {
-      const contentGroup = svgRef.current?.querySelector('g')
-      if (!contentGroup) throw new Error('家系図が見つかりません')
-      const slices = computePrintSlices((contentGroup as SVGGraphicsElement).getBBox())
-
-      const { jsPDF } = await import('jspdf')
-      const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' })
-
-      for (let i = 0; i < slices.length; i++) {
-        const canvas = await renderPageToCanvas(slices[i], i, slices.length)
-        if (i > 0) pdf.addPage()
-        pdf.addImage(
-          canvas.toDataURL('image/jpeg', 0.92),
-          'JPEG',
-          0,
-          0,
-          A4_WIDTH_MM,
-          A4_HEIGHT_MM
-        )
-      }
-
-      pdf.save(`${treeName ?? '家系図'}-${new Date().toISOString().slice(0, 10)}.pdf`)
-    } catch (err) {
-      console.error(err)
-      setPdfError('PDFの作成に失敗しました')
-    } finally {
-      setSavingPdf(false)
-    }
-  }
-
-  // 印刷時は用紙の余白をできるだけ減らす。
-  // (1) 実際に描かれている範囲（bbox）を求める。レイアウト計算の都合で
-  //     viewBox には中身の無い領域が残ることがあり（実データで幅1949に対し
-  //     中身は1684しかなかった）、そのままだと余白が増える。
-  // (2) 家系図を用紙の幅いっぱいに拡大し、用紙の高さごとにページを分ける。
-  //     1枚に収める方式だと縦横比の差がそのまま余白になり、
-  //     用紙サイズ自体を変える方式は Safari が @page size を無視するため使えない。
-  const handlePrint = () => {
-    const contentGroup = svgRef.current?.querySelector('g')
-    if (!contentGroup) {
-      window.print()
-      return
-    }
-
-    const box = (contentGroup as SVGGraphicsElement).getBBox()
-    const slices = computePrintSlices(box)
-    setPrintSlices(slices)
-
-    const cleanup = () => {
-      setPrintSlices([])
-      window.removeEventListener('afterprint', cleanup)
-    }
-    window.addEventListener('afterprint', cleanup)
-
-    // 分割したページがDOMに反映されてから印刷ダイアログを開く
-    requestAnimationFrame(() => requestAnimationFrame(() => window.print()))
-  }
-
+  // 画像の生成は非同期だが、生成し終わってから clipboard.write を呼ぶと
+  // クリック操作から時間が経ちすぎてブラウザに書き込みを拒否されることがある。
+  // そのため生成中のPromiseを ClipboardItem に渡し、clipboard.write 自体は
+  // クリック直後（同期的）に呼び出す。
   const handleCopyImage = () => {
-    if (!svgRef.current || copying) return
+    const svgEl = svgRef.current
+    if (!svgEl || copying) return
     setCopying(true)
     setCopyError(null)
     navigator.clipboard
-      .write([new ClipboardItem({ 'image/png': buildTreePngBlob() })])
+      .write([
+        new ClipboardItem({ 'image/png': buildTreePngBlob(svgEl, svgWidth, svgHeight) }),
+      ])
       .then(() => {
         setCopied(true)
         setTimeout(() => setCopied(false), 2000)
@@ -652,6 +323,42 @@ export default function FamilyTreeView({
         setCopyError('画像のコピーに失敗しました')
       })
       .finally(() => setCopying(false))
+  }
+
+  const handleSavePdf = async () => {
+    const svgEl = svgRef.current
+    if (!svgEl || savingPdf) return
+    setSavingPdf(true)
+    setPdfError(null)
+    try {
+      await saveTreeAsPdf(svgEl, treeName ?? '家系図')
+    } catch (err) {
+      console.error(err)
+      setPdfError('PDFの作成に失敗しました')
+    } finally {
+      setSavingPdf(false)
+    }
+  }
+
+  // 印刷は、家系図を用紙の幅いっぱいに拡大したうえで用紙の高さごとに
+  // ページを分けたものを一時的にDOMへ描き出してから印刷ダイアログを開く。
+  const handlePrint = () => {
+    const svgEl = svgRef.current
+    const box = svgEl ? contentBoxOf(svgEl) : null
+    if (!box) {
+      window.print()
+      return
+    }
+    setPrintSlices(computePrintSlices(box))
+
+    const cleanup = () => {
+      setPrintSlices([])
+      window.removeEventListener('afterprint', cleanup)
+    }
+    window.addEventListener('afterprint', cleanup)
+
+    // 分割したページがDOMに反映されてから印刷ダイアログを開く
+    requestAnimationFrame(() => requestAnimationFrame(() => window.print()))
   }
 
   if (members.length === 0) {
@@ -730,10 +437,7 @@ export default function FamilyTreeView({
           <Button
             variant="toolbar"
             size="sm"
-            onClick={() => {
-              setCollapsedRootIds(new Set())
-              persistCollapsed(new Set())
-            }}
+            onClick={expandAll}
           >
             <Expand aria-hidden />
             すべて展開（{collapsedRootIds.size}）
@@ -977,7 +681,7 @@ export default function FamilyTreeView({
                         fontWeight={600}
                         fill={colors.border}
                       >
-                        {(node.member.firstName || node.member.lastName).trim().charAt(0)}
+                        {initial(node.member)}
                       </text>
                     </>
                   )}
@@ -993,7 +697,7 @@ export default function FamilyTreeView({
                     fontWeight={600}
                     fill="#171717"
                   >
-                    {node.member.lastName} {node.member.firstName}
+                    {fullName(node.member)}
                   </text>
                   {years && (
                     <text x={centerX} y={81} textAnchor="middle" fontSize={11} fill="#a3a3a3">

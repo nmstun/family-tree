@@ -3,9 +3,9 @@
 import { cn } from './cn'
 
 // 写真が無いメンバーの表示。
-// 以前は性別で 👨 / 👩 の絵文字を出していたが、
-// 見た目が野暮ったいうえ、二択で表せない人を扱えないので、
-// 名前の頭文字を使う。背景色は名前から決めて、一覧の中で見分けやすくする。
+// 以前は性別で 👨 / 👩 の絵文字を出していたが、見た目が野暮ったいうえ、
+// 二択で表せない人を扱えないので、名前の頭文字を使う。
+// 背景色は頭文字から決めて、一覧の中で見分けやすくする。
 const TONES = [
   'bg-rose-100 text-rose-700',
   'bg-amber-100 text-amber-700',
@@ -23,12 +23,12 @@ function toneFor(seed: string): string {
 
 interface AvatarProps {
   photo?: string
-  // 頭文字と色の決定に使う名前
-  name: string
+  /** 写真が無いときに出す1文字（utils/memberName の initial() を想定） */
+  initial: string
   className?: string
 }
 
-export default function Avatar({ photo, name, className }: AvatarProps) {
+export default function Avatar({ photo, initial, className }: AvatarProps) {
   const base = 'h-9 w-9 shrink-0 rounded-full object-cover'
   if (photo) {
     return <img src={photo} alt="" className={cn(base, className)} />
@@ -39,11 +39,11 @@ export default function Avatar({ photo, name, className }: AvatarProps) {
       className={cn(
         base,
         'flex items-center justify-center text-[13px] font-semibold',
-        toneFor(name),
+        toneFor(initial),
         className
       )}
     >
-      {name.trim().charAt(0) || '?'}
+      {initial}
     </div>
   )
 }

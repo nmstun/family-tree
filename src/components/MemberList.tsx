@@ -4,9 +4,10 @@ import { useMemo, useState } from 'react'
 import { FamilyMember, Marriage, ParentChildRelation } from '@/types'
 import { calculateAge, calculateGrade, formatAgeSummary } from '@/utils/age'
 import { sortMembersByName } from '@/utils/sortMembers'
+import { fullName, initial } from '@/utils/memberName'
 import MemberForm from './MemberForm'
 import { Search, Star, Pencil, Trash2, Users } from 'lucide-react'
-import { Avatar, Button, Card, EmptyState, useConfirm, CONTROL_CLASS } from './ui'
+import { Avatar, Badge, Button, Card, EmptyState, useConfirm, CONTROL_CLASS } from './ui'
 
 const OTOSHIDAMA_MAX_AGE = 22
 
@@ -18,10 +19,6 @@ interface MemberListProps {
   onDelete: (id: string) => void
   selfMemberId: string | null
   onSetSelfMember: (id: string | null) => void
-}
-
-function fullName(member: FamilyMember) {
-  return `${member.lastName} ${member.firstName}`
 }
 
 function genderLabel(gender: FamilyMember['gender']) {
@@ -143,16 +140,16 @@ export default function MemberList({
                 key={member.id}
                 className="group flex items-center gap-3 px-3 py-2 transition-colors hover:bg-neutral-50"
               >
-                <Avatar photo={member.photo} name={member.firstName || member.lastName} />
+                <Avatar photo={member.photo} initial={initial(member)} />
 
                 <div className="min-w-0 flex-1">
                   <p className="flex items-center gap-1.5 truncate text-sm font-medium text-neutral-900">
                     {fullName(member)}
                     {member.id === selfMemberId && (
-                      <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-700 ring-1 ring-inset ring-amber-200">
-                        <Star className="h-2.5 w-2.5 fill-current" aria-hidden />
+                      <Badge tone="warning">
+                        <Star className="fill-current" aria-hidden />
                         自分
-                      </span>
+                      </Badge>
                     )}
                   </p>
                   <p className="truncate text-[12px] text-neutral-500">{memberSummary(member)}</p>
