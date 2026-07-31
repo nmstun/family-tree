@@ -18,8 +18,12 @@ interface FamilyTreeViewProps {
 
 const COLLAPSE_STORAGE_PREFIX = 'familyTree:collapsed:'
 
-const MIN_SCALE = 0.6
+// 大きな家系図でも全体を1画面に収められるよう、下限は思い切って小さくする。
+// このあたりまで縮むと文字は読めないが、全体の形と広がりは掴める。
+const MIN_SCALE = 0.1
 const MAX_SCALE = 2
+// ミニマップ（右下に出す全体図）の最大表示サイズ
+const MINIMAP_MAX_PX = 130
 const SCALE_STEP = 0.1
 
 // 印刷（PDF保存）時の用紙まわりの寸法。globals.css の @media print と対応させる。
@@ -171,6 +175,11 @@ export default function FamilyTreeView({
   const [printSlices, setPrintSlices] = useState<PrintSlice[]>([])
   const [savingPdf, setSavingPdf] = useState(false)
   const [pdfError, setPdfError] = useState<string | null>(null)
+  const [showMinimap, setShowMinimap] = useState(true)
+  // ミニマップに映す「いま見えている範囲」を示す矩形。
+  // スクロールのたびに再レンダリングすると73人ぶんのノードを毎回作り直すことになるため、
+  // stateには持たせず、この矩形の属性だけを直接書き換える。
+  const viewportRectRef = useRef<SVGRectElement>(null)
   const [collapsedRootIds, setCollapsedRootIds] = useState<Set<string>>(() => new Set())
   const containerRef = useRef<HTMLDivElement>(null)
   const svgRef = useRef<SVGSVGElement>(null)
@@ -330,6 +339,68 @@ export default function FamilyTreeView({
       }
     }
   }, [svgWidth])
+
+  // ミニマップの表示サイズ。家系図の縦横比を保ったまま所定の枠に収める。
+  const minimapSize = useMemo(() => {
+    if (svgWidth === 0 || svgHeight === 0) return { w: 0, h: 0 }
+    const s = Math.min(MINIMAP_MAX_PX / svgWidth, MINIMAP_MAX_PX / svgHeight)
+    return { w: Math.round(svgWidth * s), h: Math.round(svgHeight * s) }
+  }, [svgWidth, svgHeight])
+
+  // ミニマップに描くノードの四角。写真や文字は小さすぎて意味がないうえ
+  // 描画も重くなるため、位置と性別の色だけの単純な矩形にする。
+  const minimapNodes = useMemo(
+    () =>
+      layout.nodes.map((node) => ({
+        id: node.member.id,
+        x: padding + (vertical ? node.y : node.x),
+        y: padding + (vertical ? node.x : node.y),
+        w: vertical ? NODE_HEIGHT : NODE_WIDTH,
+        h: vertical ? NODE_WIDTH : NODE_HEIGHT,
+        fill: GENDER_COLOR[node.member.gender].border,
+        isSelf: node.member.id === selfMemberId,
+      })),
+    [layout.nodes, vertical, padding, selfMemberId]
+  )
+
+  // いま見えている範囲を家系図の座標系に直し、ミニマップ上の矩形へ反映する。
+  const syncViewport = () => {
+    const c = containerRef.current
+    const rect = viewportRectRef.current
+    if (!c || !rect) return
+    rect.setAttribute('x', String(c.scrollLeft / scale))
+    rect.setAttribute('y', String(c.scrollTop / scale))
+    rect.setAttribute('width', String(c.clientWidth / scale))
+    rect.setAttribute('height', String(c.clientHeight / scale))
+  }
+
+  // ズームや向きが変わると見えている範囲も変わるので測り直す
+  useEffect(() => {
+    syncViewport()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scale, vertical, svgWidth, svgHeight, showMinimap])
+
+  // 家系図全体が画面に収まるところまで縮小する（「全体を表示」ボタン用）
+  const handleFitAll = () => {
+    const c = containerRef.current
+    if (!c || svgWidth === 0 || svgHeight === 0) return
+    const fit = Math.min((c.clientWidth - 8) / svgWidth, (c.clientHeight - 8) / svgHeight)
+    setScale(Math.max(MIN_SCALE, Math.min(1, +fit.toFixed(3))))
+    c.scrollTo({ left: 0, top: 0 })
+  }
+
+  // ミニマップ上の位置をクリック／ドラッグしたら、そこが画面の中心に来るようスクロールする
+  const jumpFromMinimap = (e: React.MouseEvent<SVGSVGElement>) => {
+    const c = containerRef.current
+    if (!c) return
+    const rect = e.currentTarget.getBoundingClientRect()
+    const treeX = ((e.clientX - rect.left) / rect.width) * svgWidth
+    const treeY = ((e.clientY - rect.top) / rect.height) * svgHeight
+    c.scrollTo({
+      left: Math.max(0, treeX * scale - c.clientWidth / 2),
+      top: Math.max(0, treeY * scale - c.clientHeight / 2),
+    })
+  }
 
   // 指定したメンバーのノードが見える位置までスクロールする（「自分の位置へ」ボタン用）
   const centerOnMember = (memberId: string) => {
@@ -597,6 +668,13 @@ export default function FamilyTreeView({
           >
             リセット
           </button>
+          {/* 大きな家系図でも全体の形を一目で掴めるようにする */}
+          <button
+            onClick={handleFitAll}
+            className="min-h-[44px] md:min-h-[32px] px-3 text-sm text-gray-600 hover:bg-gray-100 rounded-full transition whitespace-nowrap"
+          >
+            全体を表示
+          </button>
         </div>
 
         <Button variant="toolbar" onClick={() => setVertical((v) => !v)}>
@@ -630,6 +708,16 @@ export default function FamilyTreeView({
             自分の位置へ
           </Button>
         )}
+
+        <label className="min-h-[44px] md:min-h-[32px] px-3 inline-flex items-center gap-1.5 text-sm text-gray-600 bg-white rounded-full shadow-sm border border-gray-200 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={showMinimap}
+            onChange={(e) => setShowMinimap(e.target.checked)}
+            className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+          />
+          全体図
+        </label>
 
         {collapsedRootIds.size > 0 && (
           <Button
@@ -690,20 +778,69 @@ export default function FamilyTreeView({
         )}
 
       {/* Scrollable canvas */}
-      <div
-        ref={containerRef}
-        className="print-area overflow-auto rounded-xl bg-gradient-to-br from-gray-50 to-gray-100"
-        style={{ maxHeight: '70vh' }}
-      >
-        <svg
-          ref={svgRef}
-          width={svgWidth * scale}
-          height={svgHeight * scale}
-          viewBox={`0 0 ${svgWidth} ${svgHeight}`}
-          xmlns="http://www.w3.org/2000/svg"
+      <div className="relative">
+        <div
+          ref={containerRef}
+          onScroll={syncViewport}
+          className="print-area overflow-auto rounded-xl bg-gradient-to-br from-gray-50 to-gray-100"
+          style={{ maxHeight: '70vh' }}
         >
-          {renderTreeContent('screen')}
-        </svg>
+          <svg
+            ref={svgRef}
+            width={svgWidth * scale}
+            height={svgHeight * scale}
+            viewBox={`0 0 ${svgWidth} ${svgHeight}`}
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            {renderTreeContent('screen')}
+          </svg>
+        </div>
+
+        {/* ミニマップ。家系図全体の形と、いま見ている場所を示す。
+            クリック／ドラッグでその位置へ移動できる。
+            表示枠は高さ70vhあり下端は画面外になりやすいので、上端側に置く。 */}
+        {showMinimap && minimapSize.w > 0 && (
+          <div className="absolute right-2 top-2 rounded-lg border border-gray-300 bg-white/90 shadow-md p-1 backdrop-blur-sm">
+            <svg
+              width={minimapSize.w}
+              height={minimapSize.h}
+              viewBox={`0 0 ${svgWidth} ${svgHeight}`}
+              className="block cursor-pointer"
+              onClick={jumpFromMinimap}
+              onMouseMove={(e) => {
+                // 左ボタンを押しながら動かしている間は追従させる
+                if (e.buttons === 1) jumpFromMinimap(e)
+              }}
+              role="img"
+              aria-label="家系図の全体図。クリックするとその位置へ移動します"
+            >
+              {minimapNodes.map((n) => (
+                <rect
+                  key={n.id}
+                  x={n.x}
+                  y={n.y}
+                  width={n.w}
+                  height={n.h}
+                  rx={20}
+                  fill={n.isSelf ? '#f59e0b' : n.fill}
+                  opacity={n.isSelf ? 1 : 0.55}
+                />
+              ))}
+              {/* いま見えている範囲。位置と大きさは syncViewport が直接書き換える */}
+              <rect
+                ref={viewportRectRef}
+                x={0}
+                y={0}
+                width={0}
+                height={0}
+                fill="#4f46e5"
+                fillOpacity={0.12}
+                stroke="#4f46e5"
+                strokeWidth={Math.max(svgWidth, svgHeight) / 200}
+              />
+            </svg>
+          </div>
+        )}
       </div>
     </div>
   )
