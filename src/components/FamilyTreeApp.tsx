@@ -16,6 +16,8 @@ import {
   UserPlus,
   Download,
   Upload,
+  AlertCircle,
+  RefreshCw,
   type LucideIcon,
 } from 'lucide-react'
 import { Alert, Button, Card, SectionHeading, useConfirm, cn } from './ui'
@@ -36,6 +38,8 @@ export default function FamilyTreeApp() {
   const {
     tree,
     loading,
+    loadError,
+    reload,
     syncStatus,
     addMember,
     updateMember,
@@ -56,10 +60,29 @@ export default function FamilyTreeApp() {
   const [importError, setImportError] = useState<string | null>(null)
   const importFileInputRef = useRef<HTMLInputElement>(null)
 
+  // 読み込みに失敗したときに「読み込み中...」のまま固まらないよう、
+  // 理由と再試行を出す（通信断やセッション切れで起こりうる）
+  if (loadError) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-neutral-50 px-4">
+        <div className="flex max-w-sm flex-col items-center gap-3 text-center">
+          <span className="flex h-10 w-10 items-center justify-center rounded-full bg-red-50 text-red-600">
+            <AlertCircle className="h-5 w-5" aria-hidden />
+          </span>
+          <p className="text-sm text-neutral-600">{loadError}</p>
+          <Button variant="secondary" onClick={reload}>
+            <RefreshCw aria-hidden />
+            再試行
+          </Button>
+        </div>
+      </div>
+    )
+  }
+
   if (loading || !tree) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-gray-500">読み込み中...</div>
+      <div className="flex min-h-screen items-center justify-center bg-neutral-50">
+        <div className="text-[13px] text-neutral-400">読み込み中...</div>
       </div>
     )
   }

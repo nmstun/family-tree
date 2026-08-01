@@ -50,7 +50,7 @@ export default function PhotoCropModal({ imageSrc, onCancel, onComplete }: Photo
         </>
       }
     >
-      <div className="relative w-full h-64 bg-gray-100 rounded-lg overflow-hidden">
+      <div className="relative w-full h-64 bg-neutral-100 rounded-lg overflow-hidden">
         <Cropper
           image={imageSrc}
           crop={crop}
@@ -81,7 +81,7 @@ export default function PhotoCropModal({ imageSrc, onCancel, onComplete }: Photo
           onChange={(e) => setZoom(Number(e.target.value))}
           className="w-full mt-1"
         />
-        <p className="text-xs text-gray-500 mt-1">
+        <p className="mt-1.5 text-[12px] text-neutral-500">
           顔や頭が切れてしまう場合は、縮小すると余白付きで全体を収められます
         </p>
       </div>

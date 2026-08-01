@@ -14,12 +14,12 @@ export default function RootLayout({
 }) {
   return (
     <html lang="ja">
-      <body className="bg-gray-50">
+      <body className="bg-neutral-50">
         {children}
         {/* 全画面共通で右上に常時表示するアプリバージョン。動作確認・問い合わせ時に
             どのビルドを見ているか分かるようにする目的。スクロールしても隠れないようfixed */}
         <div
-          className="fixed z-50 text-[10px] text-gray-400 select-none pointer-events-none"
+          className="fixed z-50 text-[10px] text-neutral-400 select-none pointer-events-none"
           style={{
             top: 'max(0.5rem, env(safe-area-inset-top))',
             right: 'max(0.5rem, env(safe-area-inset-right))',

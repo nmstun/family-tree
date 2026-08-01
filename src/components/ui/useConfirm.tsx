@@ -59,7 +59,7 @@ export function useConfirm() {
       }
     >
       {options.message && (
-        <p className="text-sm text-gray-600 whitespace-pre-line">{options.message}</p>
+        <p className="whitespace-pre-line text-[13px] leading-relaxed text-neutral-600">{options.message}</p>
       )}
     </Modal>
   ) : null

@@ -93,6 +93,10 @@ export function useFamilyTree() {
   const [tree, setTree] = useState<FamilyTree | null>(null)
   const [loading, setLoading] = useState(true)
   const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'synced' | 'error'>('idle')
+  // 初期読み込みに失敗した理由。null 以外なら画面にエラーと再試行を出す
+  const [loadError, setLoadError] = useState<string | null>(null)
+  // 「再試行」で初期化をやり直すためのカウンタ（変わると初期化のEffectが再実行される）
+  const [reloadKey, setReloadKey] = useState(0)
   const [selfMemberId, setSelfMemberId] = useState<string | null>(null)
   const treeIdRef = useRef<string | null>(null)
   const refetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -103,8 +107,10 @@ export function useFamilyTree() {
 
   // 現在のツリーの最新データを Supabase から取得し直す
   // （自分の操作・他のユーザーの操作、どちらの後にも呼ばれる）
+  // 取得できたら true、失敗したら false を返す。
+  // 呼び出し側は、失敗したときに画面を「読み込み中」のまま放置せずエラーを出す。
   const refetchTree = useCallback(
-    async (treeId: string) => {
+    async (treeId: string): Promise<boolean> => {
       const [{ data: treeRow }, { data: memberRows }, { data: marriageRows }, { data: relationRows }] =
         await Promise.all([
           supabase.from('family_trees').select('*').eq('id', treeId).single(),
@@ -117,7 +123,7 @@ export function useFamilyTree() {
           supabase.from('parent_child_relations').select('*').eq('tree_id', treeId),
         ])
 
-      if (!treeRow) return
+      if (!treeRow) return false
 
       const rows = (memberRows ?? []) as unknown as MemberRow[]
       const cache = photoCacheRef.current
@@ -157,6 +163,7 @@ export function useFamilyTree() {
         createdAt: new Date(t.created_at).getTime(),
         updatedAt: new Date(t.updated_at).getTime(),
       })
+      return true
     },
     [supabase]
   )
@@ -201,44 +208,67 @@ export function useFamilyTree() {
     let channel: ReturnType<typeof supabase.channel> | null = null
     let cancelled = false
 
+    const fail = (message: string) => {
+      if (cancelled) return
+      setLoadError(message)
+      setLoading(false)
+    }
+
     const init = async () => {
       setLoading(true)
+      setLoadError(null)
 
       const {
         data: { user },
       } = await supabase.auth.getUser()
-      if (!user || cancelled) {
-        setLoading(false)
+      if (cancelled) return
+      if (!user) {
+        fail('ログイン情報を確認できませんでした。ページを再読み込みしてください')
         return
       }
 
-      const { data: memberships } = await supabase
+      const { data: memberships, error: membershipError } = await supabase
         .from('family_tree_members')
         .select('tree_id')
+        // どの家系図が開くかが実行のたびに変わらないよう、並び順を固定する
+        .order('added_at', { ascending: true })
         .eq('user_id', user.id)
         .limit(1)
+      if (cancelled) return
+
+      // ここでエラーを握りつぶすと「所属する家系図が無い」と誤判定してしまい、
+      // 通信が一時的に失敗しただけなのに空の家系図を新規作成してしまう。
+      // （既存の家系図が見えなくなり、以後どちらが開くかも不定になる）
+      if (membershipError) {
+        console.error(membershipError)
+        fail('家系図の読み込みに失敗しました。通信状況を確認してください')
+        return
+      }
 
       let treeId = memberships?.[0]?.tree_id as string | undefined
 
+      // 本当に1つも所属していないとき（＝初回ログイン）だけ新規作成する
       if (!treeId) {
         const { data: newTree, error } = await supabase
           .rpc('create_family_tree', { p_name: '我が家の家系図' })
           .single()
-        if (error || !newTree || cancelled) {
-          setLoading(false)
+        if (cancelled) return
+        if (error || !newTree) {
+          console.error(error)
+          fail('家系図の作成に失敗しました。もう一度お試しください')
           return
         }
         treeId = (newTree as TreeRow).id
       }
 
-      if (cancelled || !treeId) {
-        setLoading(false)
+      treeIdRef.current = treeId
+      const loaded = await refetchTree(treeId)
+      if (cancelled) return
+      if (!loaded) {
+        fail('家系図の読み込みに失敗しました。通信状況を確認してください')
         return
       }
-
-      treeIdRef.current = treeId
-      await refetchTree(treeId)
-      if (!cancelled) await refetchSelfMember(treeId)
+      await refetchSelfMember(treeId)
 
       channel = supabase
         .channel(`family_tree_${treeId}`)
@@ -274,7 +304,7 @@ export function useFamilyTree() {
       if (refetchTimerRef.current) clearTimeout(refetchTimerRef.current)
       if (channel) supabase.removeChannel(channel)
     }
-  }, [supabase, refetchTree, refetchSelfMember, scheduleRefetch])
+  }, [supabase, refetchTree, refetchSelfMember, scheduleRefetch, reloadKey])
 
   // 保存処理は「実行する関数」として受け取る。
   // 完成済みのPromiseを受け取る形だと、失敗しても同じ処理をもう一度
@@ -558,6 +588,9 @@ export function useFamilyTree() {
   return {
     tree,
     loading,
+    loadError,
+    /** 初期読み込みに失敗したときにやり直す */
+    reload: () => setReloadKey((n) => n + 1),
     syncStatus,
     addMember,
     updateMember,
