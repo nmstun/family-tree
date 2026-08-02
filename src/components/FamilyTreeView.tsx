@@ -224,6 +224,12 @@ export default function FamilyTreeView({
         })
       }
     }
+    // 家系図の大きさが初めて確定したときに1回だけ実行したいので、依存は svgWidth のみ。
+    // layout.nodes / selfMemberId / vertical を足すと、ノードを1人追加しただけで
+    // 倍率と位置が勝手に戻ってしまう（hasAutoFitRef で止めてはいるが、意図を明示しておく）。
+    // このコンポーネントは家系図タブを開いたときに初めてマウントされ、
+    // その時点で selfMemberId は読み込み済みのため、値を取りこぼすことはない。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [svgWidth])
 
   // ミニマップの表示サイズ。家系図の縦横比を保ったまま所定の枠に収める。

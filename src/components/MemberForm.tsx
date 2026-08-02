@@ -216,6 +216,9 @@ export default function MemberForm({ initialMember, onSubmit, onCancel }: Member
           />
           {photoPreview && (
             <div className="mt-3 flex items-center gap-3">
+              {/* 写真はDBに base64 で持っているため next/image では最適化できない。
+                  そのまま <img> で表示する。 */}
+              {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={photoPreview}
                 alt="選択中の写真のプレビュー"

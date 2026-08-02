@@ -31,6 +31,8 @@ interface AvatarProps {
 export default function Avatar({ photo, initial, className }: AvatarProps) {
   const base = 'h-9 w-9 shrink-0 rounded-full object-cover'
   if (photo) {
+    // 写真はDBに base64 で持っているため next/image では最適化できない
+    // eslint-disable-next-line @next/next/no-img-element
     return <img src={photo} alt="" className={cn(base, className)} />
   }
   return (
