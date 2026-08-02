@@ -48,7 +48,9 @@ export function computePrintSlices(box: Box): PrintSlice[] {
   }
   // ページの境目でカードが分断されると読めなくなるため、隣のページと少し重ねる。
   // カード1枚ぶんを重ねておけば、切れたカードは次のページに必ず丸ごと現れる。
-  const overlap = Math.max(NODE_WIDTH, NODE_HEIGHT)
+  // ただし家系図が細長い（＝1ページに入る高さが小さい）と重なりが1ページぶんを
+  // 超えてしまい、送り幅が0以下になって最後まで分割されない。半分を上限にする。
+  const overlap = Math.min(Math.max(NODE_WIDTH, NODE_HEIGHT), sliceHeight / 2)
   const step = sliceHeight - overlap
   const count = Math.max(1, Math.ceil((height - overlap) / step))
   return Array.from({ length: count }, (_, i) => ({

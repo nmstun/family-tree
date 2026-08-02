@@ -11,6 +11,7 @@ import {
 } from '@/types'
 import { createClient } from '@/lib/supabase/client'
 import { wouldCreateCycle } from '@/utils/familyTreeValidation'
+import { resolveTreeToOpen } from '@/utils/treeSelection'
 
 // ---- DB の行 <-> アプリの型 の変換 ----
 
@@ -236,19 +237,21 @@ export function useFamilyTree() {
         .limit(1)
       if (cancelled) return
 
-      // ここでエラーを握りつぶすと「所属する家系図が無い」と誤判定してしまい、
-      // 通信が一時的に失敗しただけなのに空の家系図を新規作成してしまう。
-      // （既存の家系図が見えなくなり、以後どちらが開くかも不定になる）
-      if (membershipError) {
+      // 「開く／作る／中断」の判断は utils/treeSelection.ts に切り出してある。
+      // ここでエラーを握りつぶすと「所属する家系図が無い」と誤判定し、
+      // 通信が一時的に失敗しただけなのに空の家系図を作ってしまうため。
+      const resolution = resolveTreeToOpen(
+        memberships as { tree_id: string }[] | null,
+        membershipError
+      )
+      if (resolution.action === 'fail') {
         console.error(membershipError)
         fail('家系図の読み込みに失敗しました。通信状況を確認してください')
         return
       }
 
-      let treeId = memberships?.[0]?.tree_id as string | undefined
-
-      // 本当に1つも所属していないとき（＝初回ログイン）だけ新規作成する
-      if (!treeId) {
+      let treeId: string
+      if (resolution.action === 'create') {
         const { data: newTree, error } = await supabase
           .rpc('create_family_tree', { p_name: '我が家の家系図' })
           .single()
@@ -259,6 +262,8 @@ export function useFamilyTree() {
           return
         }
         treeId = (newTree as TreeRow).id
+      } else {
+        treeId = resolution.treeId
       }
 
       treeIdRef.current = treeId

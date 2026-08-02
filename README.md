@@ -66,8 +66,15 @@ npm run dev
 # 型チェック
 npm run type-check
 
-# テスト（家系図レイアウトの回帰テスト。過去に起きた表示崩れを条件として固定してある）
+# テスト（過去に起きた不具合を条件として固定した回帰テスト）
 npm test
+# ├ treeLayout      … 兄弟をつなぐ線の重なり・世代の間隔などの表示崩れ
+# ├ treeSelection   … 通信エラー時に空の家系図を作ってしまわないこと
+# ├ treeExport      … 印刷・PDFの分割（余白・ページ境目でのカード切れ）
+# ├ age             … 年齢・享年・学年（時刻を固定して判定）
+# ├ datePrecision   … 生没年の精度と入力欄の往復変換
+# ├ familyTreeValidation … 親子関係の循環検出
+# └ memberName      … 氏名・頭文字・並べ替え
 
 # ビルド
 npm run build
@@ -119,12 +126,18 @@ family-tree-app/
 │   │   └── SignOutButton.tsx
 │   ├── hooks/
 │   │   ├── useFamilyTree.ts      # 家系図データのCRUD・Realtime購読
+│   │   ├── useCollapsibleTree.ts # 枝の折りたたみ状態と表示対象の絞り込み
 │   │   └── useTreeCollaborators.ts # 共同編集者の一覧取得・招待・削除
 │   ├── lib/supabase/             # Supabaseクライアント（ブラウザ/サーバー/管理者用）
 │   ├── utils/
-│   │   ├── age.ts                # 年齢・享年の計算
+│   │   ├── age.ts                # 年齢・享年・学年の計算
+│   │   ├── datePrecision.ts      # 生没年の精度（年/年月/年月日）と入力欄の変換
 │   │   ├── familyTreeValidation.ts # 親子関係の循環チェック
+│   │   ├── memberName.ts         # 氏名・頭文字の表示
+│   │   ├── sortMembers.ts        # 氏名順の並べ替え
 │   │   ├── treeLayout.ts         # 家系図の座標レイアウト計算
+│   │   ├── treeExport.ts         # 画像コピー・印刷・PDF書き出し
+│   │   ├── treeSelection.ts      # ログイン後にどの家系図を開くかの判断
 │   │   └── jsonExport.ts
 │   └── types/index.ts
 ├── supabase/
