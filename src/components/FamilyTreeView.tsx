@@ -3,7 +3,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { FamilyMember, Marriage, ParentChildRelation } from '@/types'
-import { computeFamilyTreeLayout, NODE_WIDTH, NODE_HEIGHT, V_GAP } from '@/utils/treeLayout'
+import {
+  computeFamilyTreeLayout,
+  NODE_WIDTH,
+  NODE_HEIGHT,
+  V_GAP,
+  EDGE_COLORS,
+} from '@/utils/treeLayout'
 import { calculateAge } from '@/utils/age'
 import { fullName, initial } from '@/utils/memberName'
 import { useCollapsibleTree } from '@/hooks/useCollapsibleTree'
@@ -604,17 +610,28 @@ export default function FamilyTreeView({
             })}
 
             {/* Edges (drawn first, under the nodes) */}
-            {layout.edges.map((edge) => (
-              <path
-                key={edge.id}
-                d={vertical ? transposePath(edge.path) : edge.path}
-                fill="none"
-                stroke={edge.type === 'marriage' ? '#a3a3a3' : '#d4d4d4'}
-                strokeWidth={edge.type === 'marriage' ? 2.25 : 2}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            ))}
+            {layout.edges.map((edge) => {
+              // 遠くまで伸びていて目で追いにくい線にだけ色と太さを与える。
+              // それ以外はグレーのままにして、色が付いた線が埋もれないようにする。
+              const long = edge.colorIndex !== undefined
+              return (
+                <path
+                  key={edge.id}
+                  d={vertical ? transposePath(edge.path) : edge.path}
+                  fill="none"
+                  stroke={
+                    edge.type === 'marriage'
+                      ? '#a3a3a3'
+                      : long
+                        ? EDGE_COLORS[edge.colorIndex!]
+                        : '#d4d4d4'
+                  }
+                  strokeWidth={edge.type === 'marriage' ? 2.25 : long ? 2.75 : 2}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              )
+            })}
 
             {/* Nodes */}
             {layout.nodes.map((node) => {

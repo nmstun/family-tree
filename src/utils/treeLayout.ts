@@ -16,7 +16,21 @@ export interface LayoutEdge {
   id: string
   type: 'marriage' | 'parent-child'
   path: string
+  /** 色を付ける線だけに入る EDGE_COLORS の添字。短い線は undefined（グレーのまま） */
+  colorIndex?: number
 }
+
+// 長い線に付ける色。青と橙を先頭に置いてあるのは、色覚特性に関わらず
+// いちばん見分けやすい組み合わせのため（貪欲彩色は若い添字から使う）。
+export const EDGE_COLORS = ['#2563eb', '#ea580c', '#0d9488', '#9333ea', '#be123c']
+
+/**
+ * 色を付ける対象にする「直線区間の長さ」の下限。
+ * 実データ（73人）では親子線51本のうち、
+ * この値以上が15本、最長は3696px（図の幅の65%）だった。
+ * 全部の線を塗ると画面が散らかるだけなので、目で追えなくなる長い線だけを対象にする。
+ */
+export const LONG_EDGE_MIN_RUN = NODE_WIDTH * 2
 
 export interface LayoutResult {
   nodes: LayoutNode[]
@@ -453,6 +467,7 @@ export function computeFamilyTreeLayout(
   // 通常どおり判定する（例：離れた実の親から伸びる線が、他の家族の横棒を
   // 実際に横切る場合はきちんとジャンプさせたい）。
   const skipJumpPairs = new Set<string>()
+  const groupKeyByEdgeId = new Map<string, string>()
 
   groups.forEach((group, key) => {
     const lane = laneIndexByGroup.get(key) ?? 0
@@ -468,6 +483,8 @@ export function computeFamilyTreeLayout(
       if (group.connectedMarriageEdgeId) {
         skipJumpPairs.add(`${edgeId}|${group.connectedMarriageEdgeId}`)
       }
+      // 同じ親から出る線は縦棒・横棒を共有しているため、色は兄弟のまとまり単位で決める
+      groupKeyByEdgeId.set(edgeId, key)
       edges.push({
         id: edgeId,
         type: 'parent-child',
@@ -476,7 +493,97 @@ export function computeFamilyTreeLayout(
     })
   })
 
+  assignLongEdgeColors(edges, groupKeyByEdgeId)
+
   return { nodes, edges: addCrossingJumps(edges, skipJumpPairs), width, height }
+}
+
+/**
+ * 長い線にだけ色を割り当てる。
+ *
+ * 家系図が横に広がると、親から遠く離れた子へ伸びる線が図の幅の半分以上を
+ * 横切ることがあり、途中で他の線と何度も交差するため目で追えなくなる。
+ * 全部の線を塗ると逆に散らかるので、長い線だけを対象にし、
+ * さらに「近くにある長い線同士は必ず違う色になる」よう貪欲彩色で割り当てる
+ * （同じ色＝同じ家系、という意味は持たせない。あくまで追跡用の目印）。
+ */
+function assignLongEdgeColors(edges: LayoutEdge[], groupKeyByEdgeId: Map<string, string>): void {
+  type Group = {
+    key: string
+    indexes: number[]
+    run: number
+    x1: number
+    x2: number
+    y1: number
+    y2: number
+  }
+
+  const groups = new Map<string, Group>()
+  edges.forEach((edge, index) => {
+    // 配偶者線は常にノード間の隙間ぶん（36px）しかなく、追いにくくならない
+    const key = groupKeyByEdgeId.get(edge.id)
+    if (edge.type === 'marriage' || !key) return
+
+    // ここで見るのは円弧を入れる前の折れ線なので、数値は素直に x,y の並び
+    const nums = (edge.path.match(/-?\d+(?:\.\d+)?/g) ?? []).map(Number)
+    if (nums.length < 2) return
+    let run = 0
+    for (let i = 0; i + 3 < nums.length; i += 2) {
+      run = Math.max(run, Math.hypot(nums[i + 2] - nums[i], nums[i + 3] - nums[i + 1]))
+    }
+    const xs: number[] = []
+    const ys: number[] = []
+    for (let i = 0; i + 1 < nums.length; i += 2) {
+      xs.push(nums[i])
+      ys.push(nums[i + 1])
+    }
+
+    const existing = groups.get(key)
+    if (existing) {
+      existing.indexes.push(index)
+      existing.run = Math.max(existing.run, run)
+      existing.x1 = Math.min(existing.x1, ...xs)
+      existing.x2 = Math.max(existing.x2, ...xs)
+      existing.y1 = Math.min(existing.y1, ...ys)
+      existing.y2 = Math.max(existing.y2, ...ys)
+    } else {
+      groups.set(key, {
+        key,
+        indexes: [index],
+        run,
+        x1: Math.min(...xs),
+        x2: Math.max(...xs),
+        y1: Math.min(...ys),
+        y2: Math.max(...ys),
+      })
+    }
+  })
+
+  // 長いまとまりほど目立つ色（若い添字）が回るよう、長い順に決めていく
+  const targets = Array.from(groups.values())
+    .filter((g) => g.run >= LONG_EDGE_MIN_RUN)
+    .sort((a, b) => b.run - a.run)
+
+  // 見た目が重なる（＝取り違えやすい）まとまり同士を「隣接」とみなす
+  const overlaps = (a: Group, b: Group) =>
+    a.x1 <= b.x2 && b.x1 <= a.x2 && a.y1 <= b.y2 && b.y1 <= a.y2
+
+  const colorOf = new Map<string, number>()
+  targets.forEach((target, i) => {
+    const used = new Set<number>()
+    for (let j = 0; j < i; j++) {
+      if (overlaps(target, targets[j])) used.add(colorOf.get(targets[j].key)!)
+    }
+    let color = 0
+    while (color < EDGE_COLORS.length && used.has(color)) color++
+    // 色数が足りない密集地帯では、やむを得ず使い回す（隣接数が5を超えるのは稀）
+    if (color >= EDGE_COLORS.length) color = i % EDGE_COLORS.length
+    colorOf.set(target.key, color)
+    // 同じ親から出る線は縦棒・横棒を共有するので、まとめて同じ色にする
+    target.indexes.forEach((index) => {
+      edges[index] = { ...edges[index], colorIndex: color }
+    })
+  })
 }
 
 // 無関係な線同士がただ交差しているだけなのか、実際に繋がっているのかを見分けられるように、

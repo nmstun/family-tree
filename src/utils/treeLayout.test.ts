@@ -1,6 +1,12 @@
 import { describe, it, expect } from 'vitest'
 import { FamilyMember, Gender, Marriage, ParentChildRelation } from '@/types'
-import { computeFamilyTreeLayout, NODE_WIDTH, NODE_HEIGHT } from './treeLayout'
+import {
+  computeFamilyTreeLayout,
+  NODE_WIDTH,
+  NODE_HEIGHT,
+  EDGE_COLORS,
+  LONG_EDGE_MIN_RUN,
+} from './treeLayout'
 
 // このファイルは「過去に実際に起きた表示崩れ」を再発させないためのテスト。
 // 家系図のレイアウトは目視でしか確認できず、直すたびに別の箇所が崩れていたため、
@@ -224,5 +230,147 @@ describe('computeFamilyTreeLayout', () => {
     const result = computeFamilyTreeLayout([], [], [])
     expect(result.nodes).toEqual([])
     expect(result.edges).toEqual([])
+  })
+})
+
+// 家系図が横に広がると、親から遠い子へ伸びる線が図の幅の大半を横切り、
+// 途中で何本もの線と交差して目で追えなくなる（実データで最長3696px＝図幅の65%）。
+// そういう線にだけ色を付けるので、「長い線が塗られる」「短い線は塗られない」
+// 「近くの長い線同士が同じ色にならない」の3点を固定する。
+describe('長い線の色分け', () => {
+  /** エッジIDから「兄弟のまとまり」を取り出す（pc-<親...>-<子> という形） */
+  function groupOf(edgeId: string) {
+    return edgeId.slice(0, edgeId.lastIndexOf('-'))
+  }
+
+  /** 長い線を作る: 親が1組、その下に大勢の兄弟がいると端の子への線が長くなる */
+  function wideFamily(childCount: number) {
+    const members = [member('父'), member('母', 'female')]
+    const relations: ParentChildRelation[] = []
+    for (let i = 0; i < childCount; i++) {
+      members.push(member(`子${i}`))
+      relations.push(child('父', `子${i}`), child('母', `子${i}`))
+    }
+    return { members, marriages: [marriage('父', '母')], relations }
+  }
+
+  it('配偶者線には色を付けない（常に短く、追いにくくならない）', () => {
+    const { members, marriages, relations } = wideFamily(8)
+    const { edges } = computeFamilyTreeLayout(members, marriages, relations)
+    edges
+      .filter((e) => e.type === 'marriage')
+      .forEach((e) => expect(e.colorIndex).toBeUndefined())
+  })
+
+  it('短い親子線には色を付けない', () => {
+    // 子が1人だけなら線はまっすぐ下りるだけで、追いにくくならない
+    const members = [member('親'), member('子')]
+    const { edges } = computeFamilyTreeLayout(members, [], [child('親', '子')])
+    edges.forEach((e) => expect(e.colorIndex).toBeUndefined())
+  })
+
+  it('しきい値以上の直線区間を含む兄弟のまとまりに色が付く', () => {
+    const { members, marriages, relations } = wideFamily(8)
+    const { edges } = computeFamilyTreeLayout(members, marriages, relations)
+
+    const colored = edges.filter((e) => e.colorIndex !== undefined)
+    expect(colored.length).toBeGreaterThan(0)
+
+    // 色が付いたまとまりは、いずれかの線が LONG_EDGE_MIN_RUN 以上であること
+    const runsByGroup = new Map<string, number>()
+    colored.forEach((e) => {
+      const pts = pointsIn(e.path)
+      let run = 0
+      for (let i = 0; i + 1 < pts.length; i++) {
+        run = Math.max(run, Math.hypot(pts[i + 1].x - pts[i].x, pts[i + 1].y - pts[i].y))
+      }
+      const g = groupOf(e.id)
+      runsByGroup.set(g, Math.max(runsByGroup.get(g) ?? 0, run))
+    })
+    runsByGroup.forEach((run) => expect(run).toBeGreaterThanOrEqual(LONG_EDGE_MIN_RUN))
+  })
+
+  it('同じ親から伸びる線（兄弟）は同じ色になる', () => {
+    // 兄弟の線は親の下の縦棒と横棒を共有しているため、色が違うと
+    // 共有部分がどちらの色で塗られるかが不定になり、途中で色が変わって見える。
+    const { members, marriages, relations } = wideFamily(8)
+    const { edges } = computeFamilyTreeLayout(members, marriages, relations)
+
+    const colorByGroup = new Map<string, number | undefined>()
+    edges
+      .filter((e) => e.type === 'parent-child')
+      .forEach((e) => {
+        const g = groupOf(e.id)
+        if (colorByGroup.has(g)) {
+          expect(e.colorIndex).toBe(colorByGroup.get(g))
+        } else {
+          colorByGroup.set(g, e.colorIndex)
+        }
+      })
+    expect(colorByGroup.size).toBeGreaterThan(0)
+  })
+
+  it('色の添字は用意した色数の範囲に収まる', () => {
+    const { members, marriages, relations } = wideFamily(20)
+    const { edges } = computeFamilyTreeLayout(members, marriages, relations)
+    edges
+      .filter((e) => e.colorIndex !== undefined)
+      .forEach((e) => {
+        expect(e.colorIndex).toBeGreaterThanOrEqual(0)
+        expect(e.colorIndex).toBeLessThan(EDGE_COLORS.length)
+      })
+  })
+
+  it('重なり合う別々のまとまり同士は違う色になる', () => {
+    // 左右2つの家系。左右の子同士が結婚することで子が反対側へ引っ張られ、
+    // 親からその子への線が家系図を横切って互いに重なる（本番で起きている状況）。
+    const members: FamilyMember[] = []
+    const marriages: Marriage[] = []
+    const relations: ParentChildRelation[] = []
+    for (const side of ['左', '右']) {
+      members.push(member(`${side}父`), member(`${side}母`, 'female'))
+      marriages.push(marriage(`${side}父`, `${side}母`))
+      for (let i = 0; i < 5; i++) {
+        members.push(member(`${side}子${i}`, i % 2 === 0 ? 'male' : 'female'))
+        relations.push(child(`${side}父`, `${side}子${i}`), child(`${side}母`, `${side}子${i}`))
+      }
+    }
+    marriages.push(marriage('左子0', '右子1'), marriage('左子2', '右子3'))
+
+    const { edges } = computeFamilyTreeLayout(members, marriages, relations)
+
+    // まとまりごとに、色と外接範囲をまとめる
+    const boxes = new Map<
+      string,
+      { colorIndex: number; x1: number; x2: number; y1: number; y2: number }
+    >()
+    edges
+      .filter((e) => e.colorIndex !== undefined)
+      .forEach((e) => {
+        const pts = pointsIn(e.path)
+        const xs = pts.map((p) => p.x)
+        const ys = pts.map((p) => p.y)
+        const g = groupOf(e.id)
+        const cur = boxes.get(g)
+        const next = {
+          colorIndex: e.colorIndex!,
+          x1: Math.min(...xs, cur?.x1 ?? Infinity),
+          x2: Math.max(...xs, cur?.x2 ?? -Infinity),
+          y1: Math.min(...ys, cur?.y1 ?? Infinity),
+          y2: Math.max(...ys, cur?.y2 ?? -Infinity),
+        }
+        boxes.set(g, next)
+      })
+
+    const list = Array.from(boxes.values())
+    expect(list.length).toBeGreaterThan(1)
+    for (let i = 0; i < list.length; i++) {
+      for (let j = i + 1; j < list.length; j++) {
+        const a = list[i]
+        const b = list[j]
+        const overlap = a.x1 <= b.x2 && b.x1 <= a.x2 && a.y1 <= b.y2 && b.y1 <= a.y2
+        if (overlap) expect(a.colorIndex).not.toBe(b.colorIndex)
+      }
+    }
   })
 })
