@@ -306,14 +306,16 @@ export function computeFamilyTreeLayout(
   // 片方の親夫婦にしか属せないため、もう一方の親は子を1つも持たないまま
   // ルートとして図の端に流れてしまう（実データで、子への線が図幅の65%＝3696pxまで
   // 伸びていた）。世代は同じなので、隣に並べれば線は数百pxに収まる。
+  const childrenOfMember = new Map<string, string[]>()
+  relations.forEach((r) => {
+    if (!memberMap.has(r.parentId) || !memberMap.has(r.childId)) return
+    if (!childrenOfMember.has(r.parentId)) childrenOfMember.set(r.parentId, [])
+    childrenOfMember.get(r.parentId)!.push(r.childId)
+  })
+
   const companionsOf = new Map<string[], string[][]>()
   {
-    const childrenOf = new Map<string, string[]>()
-    relations.forEach((r) => {
-      if (!memberMap.has(r.parentId) || !memberMap.has(r.childId)) return
-      if (!childrenOf.has(r.parentId)) childrenOf.set(r.parentId, [])
-      childrenOf.get(r.parentId)!.push(r.childId)
-    })
+    const childrenOf = childrenOfMember
 
     const primaryOfChild = new Map<string[], string[]>()
     primaryChildrenOf.forEach((children, parent) => {
@@ -349,11 +351,15 @@ export function computeFamilyTreeLayout(
     })
   }
 
-  // 相棒を横に並べたときの、そのクラスタ自身が占める幅
+  // 相棒の縦線が下の世代のカードの真上に来てしまったときに、横へ逃がせるだけの余白。
+  // カード半分＋隙間ぶんあれば、下のカードとカードのちょうど中間まで動かせる。
+  const COMPANION_SLACK = NODE_WIDTH / 2 + H_GAP
+
+  /** そのクラスタと相棒たちを横に並べたときに占める幅 */
   const clusterWidthOf = (cluster: string[]) => {
     const companions = companionsOf.get(cluster) || []
     return companions.reduce(
-      (total, c) => total + H_GAP + clusterWidth(c.length),
+      (total, c) => total + H_GAP + clusterWidth(c.length) + COMPANION_SLACK,
       clusterWidth(cluster.length)
     )
   }
@@ -405,7 +411,11 @@ export function computeFamilyTreeLayout(
       })
       const centers = children.map((c) => positions.get(c[0])!.x + clusterWidthOf(c) / 2)
       const idealCenter = centers.reduce((s, x) => s + x, 0) / centers.length
-      left = idealCenter - cw / 2
+      // 中心合わせは自分のクラスタの幅だけで行う。相棒ぶんまで含めると、
+      // 相棒がいるというだけで親が子の中心からずれてしまう。
+      left = idealCenter - clusterWidth(cluster.length) / 2
+      // ただし割り当てられた枠からはみ出さない（隣のきょうだいと重なるため）
+      left = Math.max(slotLeft, Math.min(left, slotLeft + slotWidth - cw))
     }
 
     const place = (ids: string[], startLeft: number) => {
@@ -427,7 +437,27 @@ export function computeFamilyTreeLayout(
     let cursor = place(cluster, left)
     ;(companionsOf.get(cluster) || []).forEach((companion) => {
       positioning.add(companion)
-      cursor = place(companion, cursor + H_GAP)
+      // 相棒から子へ下ろす縦線は、相棒の中央から出る。
+      // そこが下の世代のカードの中央と一致すると、そのカードへ別の親から
+      // 下りている縦線とぴったり重なり、2本が1本に見えてしまう。
+      // （実データで、長本→子の線と、岸男夫婦→聖男の線が x=2218 で重なっていた）
+      // 自分の子の真上に来るぶんには線が繋がって見えるだけなので問題ない。
+      const start = cursor + H_GAP
+      const half = clusterWidth(companion.length) / 2
+      const ownChildren = new Set(companion.flatMap((id) => childrenOfMember.get(id) || []))
+      // 自分の子の真上に来るぶんには線がそのまま繋がって見えるので避けなくてよい。
+      // 避けたいのは、別の親からその子へ下りている縦線と重なること。
+      const avoid = nodes
+        .filter(
+          (n) =>
+            n.generation === generation.get(companion[0])! + 1 &&
+            !ownChildren.has(n.member.id)
+        )
+        .map((n) => n.x + NODE_WIDTH / 2)
+      const clearAt = (x: number) => avoid.every((a) => Math.abs(a - x) >= H_GAP)
+      let shift = 0
+      while (shift <= COMPANION_SLACK && !clearAt(start + half + shift)) shift += 2
+      cursor = place(companion, start + Math.min(shift, COMPANION_SLACK))
     })
   }
 

@@ -380,60 +380,74 @@ describe('長い線の色分け', () => {
 // 子への線が図幅の65%（実データで3696px）まで伸びていた。
 // 世代は同じなので、勝ったほうの親の隣に並べれば線は数百pxに収まる。
 describe('子を持てなかった親の配置', () => {
-  function twoBrothersMarryTwoSisters() {
-    const members = [
-      member('兄の父'),
-      member('兄の母', 'female'),
-      member('兄'),
-      member('弟'),
-      member('嫁の父'),
-      member('姉', 'female'),
-      member('妹', 'female'),
-      // 端に置かれる原因を作るための、無関係で大きな家系
-      member('他家父'),
-      member('他家母', 'female'),
-      ...Array.from({ length: 6 }, (_, i) => member(`他家子${i}`)),
-    ]
-    const marriages = [
-      marriage('兄の父', '兄の母'),
-      marriage('他家父', '他家母'),
-      marriage('兄', '姉'),
-      marriage('弟', '妹'),
-    ]
-    const relations: ParentChildRelation[] = [
-      child('兄の父', '兄'),
-      child('兄の母', '兄'),
-      child('兄の父', '弟'),
-      child('兄の母', '弟'),
-      child('嫁の父', '姉'),
-      child('嫁の父', '妹'),
-      ...Array.from({ length: 6 }, (_, i) => child('他家父', `他家子${i}`)),
-      ...Array.from({ length: 6 }, (_, i) => child('他家母', `他家子${i}`)),
-    ]
+  // 兄弟3人が、よその姉妹3人とそれぞれ結婚している構成。
+  // どの子夫婦も片方の親にしかぶら下げられないため、姉妹側の父は
+  // 子を1つも持たないルートになる。
+  function siblingsMarrySiblings() {
+    const members = [member('兄の父'), member('兄の母', 'female'), member('嫁の父')]
+    const marriages = [marriage('兄の父', '兄の母')]
+    const relations: ParentChildRelation[] = []
+    for (let i = 0; i < 3; i++) {
+      members.push(member(`息子${i}`), member(`娘${i}`, 'female'))
+      marriages.push(marriage(`息子${i}`, `娘${i}`))
+      relations.push(
+        child('兄の父', `息子${i}`),
+        child('兄の母', `息子${i}`),
+        child('嫁の父', `娘${i}`)
+      )
+    }
+    // 端に流されやすくするための、無関係で大きな家系
+    members.push(member('他家父'), member('他家母', 'female'))
+    marriages.push(marriage('他家父', '他家母'))
+    for (let i = 0; i < 6; i++) {
+      members.push(member(`他家子${i}`))
+      relations.push(child('他家父', `他家子${i}`), child('他家母', `他家子${i}`))
+    }
     return { members, marriages, relations }
   }
 
+  const layout = () => {
+    const { members, marriages, relations } = siblingsMarrySiblings()
+    return { ...computeFamilyTreeLayout(members, marriages, relations), relations }
+  }
+  const centerOf = (nodes: ReturnType<typeof layout>['nodes'], id: string) => {
+    const n = nodes.find((v) => v.member.id === id)!
+    return n.x + NODE_WIDTH / 2
+  }
+
   it('子を1つも持てなかった親も、子のすぐ近くに置かれる', () => {
-    const { members, marriages, relations } = twoBrothersMarryTwoSisters()
-    const { nodes } = computeFamilyTreeLayout(members, marriages, relations)
-    const centerOf = (id: string) => {
-      const n = nodes.find((v) => v.member.id === id)!
-      return n.x + NODE_WIDTH / 2
-    }
-
-    // 「嫁の父」は姉・妹の親だが、2人とも夫側の親にぶら下がるため子を持てない
-    const father = centerOf('嫁の父')
-    const distances = ['姉', '妹'].map((c) => Math.abs(centerOf(c) - father))
-
+    const { nodes } = layout()
+    const father = centerOf(nodes, '嫁の父')
+    const distances = [0, 1, 2].map((i) => Math.abs(centerOf(nodes, `娘${i}`) - father))
     // カード数枚ぶんに収まっていること。
     // 実データではこれが3696px（図幅の65%）まで伸びていた。
-    // この構成では、隣に並べない場合いちばん遠い子で528pxになる。
-    distances.forEach((d) => expect(d).toBeLessThan(NODE_WIDTH * 3))
+    distances.forEach((d) => expect(d).toBeLessThan(NODE_WIDTH * 5))
+  })
+
+  it('隣に置いた親の縦線が、下の世代のカードの真上に重ならない', () => {
+    // 親から子へ下ろす縦線は親の中央から出る。そこが下の世代のカードの中央と
+    // 一致すると、そのカードへ別の親から下りている縦線とぴったり重なり、
+    // 2本が1本に見えてしまう（実データで x=2218 に2本が重なっていた）。
+    // 自分の子の真上に来るぶんには線が繋がって見えるだけなので、対象外。
+    const { nodes, relations } = layout()
+    const father = nodes.find((n) => n.member.id === '嫁の父')!
+    const dropX = father.x + NODE_WIDTH / 2
+    const ownChildren = new Set(
+      relations.filter((r) => r.parentId === '嫁の父').map((r) => r.childId)
+    )
+
+    nodes
+      .filter((n) => n.generation === father.generation + 1 && !ownChildren.has(n.member.id))
+      .forEach((n) => {
+        expect(
+          Math.abs(n.x + NODE_WIDTH / 2 - dropX),
+          `${n.member.firstName} の真上に縦線が重なっている`
+        ).toBeGreaterThanOrEqual(NODE_WIDTH / 4)
+      })
   })
 
   it('近くに置いてもカードは重ならない', () => {
-    const { members, marriages, relations } = twoBrothersMarryTwoSisters()
-    const { nodes } = computeFamilyTreeLayout(members, marriages, relations)
+    const { nodes } = layout()
     for (let i = 0; i < nodes.length; i++) {
       for (let j = i + 1; j < nodes.length; j++) {
         const a = nodes[i]
@@ -452,8 +466,7 @@ describe('子を持てなかった親の配置', () => {
   })
 
   it('親と子は必ず隣り合う世代に置かれる（縦の距離が均一）', () => {
-    const { members, marriages, relations } = twoBrothersMarryTwoSisters()
-    const { nodes } = computeFamilyTreeLayout(members, marriages, relations)
+    const { nodes, relations } = layout()
     const nodeOf = (id: string) => nodes.find((v) => v.member.id === id)!
     const gaps = new Set(
       relations.map(({ parentId, childId }) => nodeOf(childId).y - nodeOf(parentId).y)
