@@ -299,7 +299,64 @@ export function computeFamilyTreeLayout(
     })
   }
 
-  const clusterWidthOf = (cluster: string[]) => clusterWidth(cluster.length)
+  // 子はいるのに「主たる親」になれなかった親クラスタを、実際に主たる親になった
+  // クラスタの隣に置く。
+  //
+  // 兄弟2人がよそのきょうだい2人と結婚しているような場合、どちらの子クラスタも
+  // 片方の親夫婦にしか属せないため、もう一方の親は子を1つも持たないまま
+  // ルートとして図の端に流れてしまう（実データで、子への線が図幅の65%＝3696pxまで
+  // 伸びていた）。世代は同じなので、隣に並べれば線は数百pxに収まる。
+  const companionsOf = new Map<string[], string[][]>()
+  {
+    const childrenOf = new Map<string, string[]>()
+    relations.forEach((r) => {
+      if (!memberMap.has(r.parentId) || !memberMap.has(r.childId)) return
+      if (!childrenOf.has(r.parentId)) childrenOf.set(r.parentId, [])
+      childrenOf.get(r.parentId)!.push(r.childId)
+    })
+
+    const primaryOfChild = new Map<string[], string[]>()
+    primaryChildrenOf.forEach((children, parent) => {
+      children.forEach((child) => primaryOfChild.set(child, parent))
+    })
+
+    const stranded = roots.filter(
+      (cluster) =>
+        !primaryChildrenOf.has(cluster) &&
+        cluster.some((id) => (childrenOf.get(id) || []).length > 0)
+    )
+
+    stranded.forEach((cluster) => {
+      // この親の子クラスタを実際に抱えている相手を探す
+      let host: string[] | undefined
+      cluster.some((id) =>
+        (childrenOf.get(id) || []).some((childId: string) => {
+          const childCluster = clusterOf.get(childId)
+          const owner = childCluster && primaryOfChild.get(childCluster)
+          // 同じ世代でなければ横に並べられない
+          if (owner && owner !== cluster && generation.get(owner[0]) === generation.get(cluster[0])) {
+            host = owner
+            return true
+          }
+          return false
+        })
+      )
+      if (!host) return
+      if (!companionsOf.has(host)) companionsOf.set(host, [])
+      companionsOf.get(host)!.push(cluster)
+      const at = roots.indexOf(cluster)
+      if (at >= 0) roots.splice(at, 1)
+    })
+  }
+
+  // 相棒を横に並べたときの、そのクラスタ自身が占める幅
+  const clusterWidthOf = (cluster: string[]) => {
+    const companions = companionsOf.get(cluster) || []
+    return companions.reduce(
+      (total, c) => total + H_GAP + clusterWidth(c.length),
+      clusterWidth(cluster.length)
+    )
+  }
 
   // ボトムアップ：各クラスタの子孫全体が必要とする幅を計算する
   // （循環はあり得ないはずだが、万一のデータ不整合で無限再帰しないよう防御する）
@@ -351,12 +408,26 @@ export function computeFamilyTreeLayout(
       left = idealCenter - cw / 2
     }
 
-    cluster.forEach((memberId, i) => {
-      const x = left + i * (NODE_WIDTH + H_GAP)
-      const node: LayoutNode = { member: memberMap.get(memberId)!, x, y, generation: g }
-      positions.set(memberId, { x, y })
-      nodeByMemberId.set(memberId, node)
-      nodes.push(node)
+    const place = (ids: string[], startLeft: number) => {
+      ids.forEach((memberId, i) => {
+        const x = startLeft + i * (NODE_WIDTH + H_GAP)
+        const node: LayoutNode = {
+          member: memberMap.get(memberId)!,
+          x,
+          y,
+          generation: generation.get(memberId)!,
+        }
+        positions.set(memberId, { x, y })
+        nodeByMemberId.set(memberId, node)
+        nodes.push(node)
+      })
+      return startLeft + clusterWidth(ids.length)
+    }
+
+    let cursor = place(cluster, left)
+    ;(companionsOf.get(cluster) || []).forEach((companion) => {
+      positioning.add(companion)
+      cursor = place(companion, cursor + H_GAP)
     })
   }
 

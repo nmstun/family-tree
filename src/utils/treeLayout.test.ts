@@ -374,3 +374,90 @@ describe('長い線の色分け', () => {
     }
   })
 })
+
+// 兄弟2人が、よその姉妹2人と結婚しているとき、どちらの子夫婦も片方の親にしか
+// ぶら下げられない。負けたほうの親は子を1つも持たないルートとして図の端へ流れ、
+// 子への線が図幅の65%（実データで3696px）まで伸びていた。
+// 世代は同じなので、勝ったほうの親の隣に並べれば線は数百pxに収まる。
+describe('子を持てなかった親の配置', () => {
+  function twoBrothersMarryTwoSisters() {
+    const members = [
+      member('兄の父'),
+      member('兄の母', 'female'),
+      member('兄'),
+      member('弟'),
+      member('嫁の父'),
+      member('姉', 'female'),
+      member('妹', 'female'),
+      // 端に置かれる原因を作るための、無関係で大きな家系
+      member('他家父'),
+      member('他家母', 'female'),
+      ...Array.from({ length: 6 }, (_, i) => member(`他家子${i}`)),
+    ]
+    const marriages = [
+      marriage('兄の父', '兄の母'),
+      marriage('他家父', '他家母'),
+      marriage('兄', '姉'),
+      marriage('弟', '妹'),
+    ]
+    const relations: ParentChildRelation[] = [
+      child('兄の父', '兄'),
+      child('兄の母', '兄'),
+      child('兄の父', '弟'),
+      child('兄の母', '弟'),
+      child('嫁の父', '姉'),
+      child('嫁の父', '妹'),
+      ...Array.from({ length: 6 }, (_, i) => child('他家父', `他家子${i}`)),
+      ...Array.from({ length: 6 }, (_, i) => child('他家母', `他家子${i}`)),
+    ]
+    return { members, marriages, relations }
+  }
+
+  it('子を1つも持てなかった親も、子のすぐ近くに置かれる', () => {
+    const { members, marriages, relations } = twoBrothersMarryTwoSisters()
+    const { nodes } = computeFamilyTreeLayout(members, marriages, relations)
+    const centerOf = (id: string) => {
+      const n = nodes.find((v) => v.member.id === id)!
+      return n.x + NODE_WIDTH / 2
+    }
+
+    // 「嫁の父」は姉・妹の親だが、2人とも夫側の親にぶら下がるため子を持てない
+    const father = centerOf('嫁の父')
+    const distances = ['姉', '妹'].map((c) => Math.abs(centerOf(c) - father))
+
+    // カード数枚ぶんに収まっていること。
+    // 実データではこれが3696px（図幅の65%）まで伸びていた。
+    // この構成では、隣に並べない場合いちばん遠い子で528pxになる。
+    distances.forEach((d) => expect(d).toBeLessThan(NODE_WIDTH * 3))
+  })
+
+  it('近くに置いてもカードは重ならない', () => {
+    const { members, marriages, relations } = twoBrothersMarryTwoSisters()
+    const { nodes } = computeFamilyTreeLayout(members, marriages, relations)
+    for (let i = 0; i < nodes.length; i++) {
+      for (let j = i + 1; j < nodes.length; j++) {
+        const a = nodes[i]
+        const b = nodes[j]
+        const overlaps =
+          a.x < b.x + NODE_WIDTH &&
+          b.x < a.x + NODE_WIDTH &&
+          a.y < b.y + NODE_HEIGHT &&
+          b.y < a.y + NODE_HEIGHT
+        expect(
+          overlaps,
+          `${a.member.firstName} と ${b.member.firstName} が重なっている`
+        ).toBe(false)
+      }
+    }
+  })
+
+  it('親と子は必ず隣り合う世代に置かれる（縦の距離が均一）', () => {
+    const { members, marriages, relations } = twoBrothersMarryTwoSisters()
+    const { nodes } = computeFamilyTreeLayout(members, marriages, relations)
+    const nodeOf = (id: string) => nodes.find((v) => v.member.id === id)!
+    const gaps = new Set(
+      relations.map(({ parentId, childId }) => nodeOf(childId).y - nodeOf(parentId).y)
+    )
+    expect(gaps.size).toBe(1)
+  })
+})
