@@ -8,7 +8,7 @@ export default function manifest(): MetadataRoute.Manifest {
     short_name: '家系図',
     description: '家系図を写真付きで整理できるWebアプリ',
     start_url: '/',
-    theme_color: '#2d6a4f',
+    theme_color: '#171717',
     background_color: '#fafafa',
     icons: [
       { src: '/icon-192.png', sizes: '192x192', type: 'image/png' },
