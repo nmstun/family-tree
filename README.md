@@ -24,13 +24,18 @@
 
 ## アプリアイコン
 
-タブや iOS のホーム画面に表示されるアイコンは、夫婦2ノードから子3ノードへ線が伸びる家系図を深緑（`#2d6a4f`）と生成りで描いたもの。実体は `app/icon.svg` の1ファイルで、`app/apple-icon.png`（180px）と `public/icon-192.png` / `public/icon-512.png` はそこから `rsvg-convert` で書き出している。図形の変更は SVG 側だけを直し、PNG を作り直す。
+タブや iOS のホーム画面に表示されるアイコンは、夫婦2ノードから子3ノードへ線が伸びる家系図を深緑（`#2d6a4f`）と生成りで描いたもの。実体は `app/icon.svg` の1ファイルで、他はすべてそこから書き出している。図形の変更は SVG 側だけを直し、以下で残りを作り直す。
 
 ```sh
 rsvg-convert -w 180 -h 180 app/icon.svg -o app/apple-icon.png
 rsvg-convert -w 192 -h 192 app/icon.svg -o public/icon-192.png
 rsvg-convert -w 512 -h 512 app/icon.svg -o public/icon-512.png
+node scripts/make-favicon-ico.mjs app/icon.svg app/favicon.ico
 ```
+
+`app/favicon.ico` を SVG と併せて置いているのは **Safari が `rel="icon"` の SVG を使わない**ため。SVG だけだと Safari のタブが空になる。Next.js は `favicon.ico` と `icon.svg` の両方を `link` タグとして出力するので、Safari は ico を、Chrome は SVG を使う。
+
+ico の作り方には制約が2つあり、[`scripts/make-favicon-ico.mjs`](./scripts/make-favicon-ico.mjs) がそれを吸収している。ico の中身は BMP ではなく PNG をそのまま詰めており、その PNG は **RGBA でなければならない**（`rsvg-convert` は全ピクセルが不透明だと RGB で書き出すが、Next.js の ICO デコーダーは RGBA を要求し、RGB のままだとビルドが 500 になる）。
 
 `app/manifest.ts` がホーム画面追加時の名称とアイコンを定義する（Next.js が `/manifest.webmanifest` として配信し、`link` タグも自動で挿入する）。未ログインの `/login` 画面からもホーム画面に追加できるよう、`middleware.ts` の `matcher` で `manifest.webmanifest` を認証リダイレクトの対象外にしている。
 
