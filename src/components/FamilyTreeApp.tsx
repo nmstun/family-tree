@@ -2,11 +2,14 @@
 
 import { useRef, useState } from 'react'
 import { useFamilyTree } from '@/hooks/useFamilyTree'
+import { FamilyMember } from '@/types'
 import { exportToJSON, downloadJSON, importJSON } from '@/utils/jsonExport'
+import { deletionImpact } from '@/utils/memberDeletion'
 import MemberForm from './MemberForm'
 import MemberList from './MemberList'
 import RelationshipManager from './RelationshipManager'
 import FamilyTreeView from './FamilyTreeView'
+import MemberDetailPanel from './MemberDetailPanel'
 import SignOutButton from './SignOutButton'
 import CollaboratorsPanel from './CollaboratorsPanel'
 import {
@@ -56,6 +59,8 @@ export default function FamilyTreeApp() {
   } = useFamilyTree()
   const { confirm, dialog } = useConfirm()
   const [activeTab, setActiveTab] = useState<TabId>('members')
+  // 家系図上で開いているメンバー（サイドパネルの対象）
+  const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null)
   const [importing, setImporting] = useState(false)
   const [importError, setImportError] = useState<string | null>(null)
   const importFileInputRef = useRef<HTMLInputElement>(null)
@@ -86,6 +91,20 @@ export default function FamilyTreeApp() {
       </div>
     )
   }
+
+  const selectedMember = selectedMemberId
+    ? tree.members.find((m) => m.id === selectedMemberId)
+    : undefined
+
+  // 家系図から削除するときも、メンバー一覧と同じ確認文言・同じ件数の数え方を使う
+  const handleDeleteFromPanel = async (member: FamilyMember) => {
+    const { title, message } = deletionImpact(member, tree.marriages, tree.parentChildRelations)
+    const ok = await confirm({ title, message, confirmLabel: '削除する', destructive: true })
+    if (!ok) return
+    setSelectedMemberId(null)
+    deleteMember(member.id)
+  }
+
 
   const handleExport = () => {
     const data = exportToJSON(tree)
@@ -217,15 +236,38 @@ export default function FamilyTreeApp() {
 
         {/* タブ名が「家系図」なので、この画面には見出しを置かずツールバーから始める */}
         {activeTab === 'view' && (
-          <Card padding="none" className="p-3">
-            <FamilyTreeView
-              treeId={tree.id}
-              treeName={tree.name}
-              members={tree.members}
-              marriages={tree.marriages}
-              parentChildRelations={tree.parentChildRelations}
-              selfMemberId={selfMemberId}
-            />
+          <Card padding="none" className="flex overflow-hidden">
+            <div className="min-w-0 flex-1 p-3">
+              <FamilyTreeView
+                treeId={tree.id}
+                treeName={tree.name}
+                members={tree.members}
+                marriages={tree.marriages}
+                parentChildRelations={tree.parentChildRelations}
+                selfMemberId={selfMemberId}
+                selectedMemberId={selectedMemberId}
+                onSelectMember={setSelectedMemberId}
+              />
+            </div>
+            {selectedMember && (
+              <MemberDetailPanel
+                member={selectedMember}
+                members={tree.members}
+                marriages={tree.marriages}
+                parentChildRelations={tree.parentChildRelations}
+                isSelf={selfMemberId === selectedMember.id}
+                onClose={() => setSelectedMemberId(null)}
+                onSelectMember={setSelectedMemberId}
+                onUpdateMember={updateMember}
+                onDeleteMember={deleteMember}
+                onSetSelf={setSelfMember}
+                onAddMarriage={addMarriage}
+                onRemoveMarriage={removeMarriage}
+                onAddParentChild={addParentChild}
+                onRemoveParentChild={removeParentChild}
+                onRequestDelete={handleDeleteFromPanel}
+              />
+            )}
           </Card>
         )}
 

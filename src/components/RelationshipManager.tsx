@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import { FamilyMember, Marriage, ParentChildRelation } from '@/types'
-import { wouldCreateCycle } from '@/utils/familyTreeValidation'
+import { validateMarriage, validateParentChild } from '@/utils/relationValidation'
 import { sortMembersByName } from '@/utils/sortMembers'
 import { displayName } from '@/utils/memberName'
 import { Heart, GitBranch, Trash2, Pencil, Check, X, Users } from 'lucide-react'
@@ -27,40 +27,6 @@ interface RelationshipManagerProps {
   onRemoveMarriage: (id: string) => void
   onAddParentChild: (parentId: string, childId: string) => void
   onRemoveParentChild: (parentId: string, childId: string) => void
-}
-
-// 入力チェックは副作用を持たない関数に切り出しておく。
-// 呼び出し側はエラー文言（問題なければ null）を受け取って画面に出すだけにする。
-function validateMarriage(
-  spouse1: string,
-  spouse2: string,
-  marriages: Marriage[]
-): string | null {
-  if (!spouse1 || !spouse2) return '配偶者を2人選択してください'
-  if (spouse1 === spouse2) return '同じメンバー同士は結婚関係にできません'
-  const alreadyMarried = marriages.some(
-    (m) =>
-      (m.spouse1Id === spouse1 && m.spouse2Id === spouse2) ||
-      (m.spouse1Id === spouse2 && m.spouse2Id === spouse1)
-  )
-  if (alreadyMarried) return 'すでに配偶者関係が設定されています'
-  return null
-}
-
-function validateParentChild(
-  parentId: string,
-  childId: string,
-  relations: ParentChildRelation[]
-): string | null {
-  if (!parentId || !childId) return '親と子を選択してください'
-  if (parentId === childId) return '同じメンバーを親子関係にはできません'
-  if (relations.some((r) => r.parentId === parentId && r.childId === childId)) {
-    return 'すでにこの親子関係が設定されています'
-  }
-  if (wouldCreateCycle(parentId, childId, relations)) {
-    return 'この関係を設定すると家系図が循環してしまうため、設定できません'
-  }
-  return null
 }
 
 export default function RelationshipManager({

@@ -44,6 +44,9 @@ interface FamilyTreeViewProps {
   marriages: Marriage[]
   parentChildRelations: ParentChildRelation[]
   selfMemberId?: string | null
+  /** 詳細パネルで開いているメンバー。強調表示に使う */
+  selectedMemberId?: string | null
+  onSelectMember?: (id: string) => void
 }
 
 // 大きな家系図でも全体を1画面に収められるよう、下限は思い切って小さくする。
@@ -137,6 +140,8 @@ export default function FamilyTreeView({
   marriages,
   parentChildRelations,
   selfMemberId = null,
+  selectedMemberId = null,
+  onSelectMember,
 }: FamilyTreeViewProps) {
   const [scale, setScale] = useState(1)
   const [vertical, setVertical] = useState(true)
@@ -657,6 +662,8 @@ export default function FamilyTreeView({
               const boxHeight = vertical ? NODE_WIDTH : NODE_HEIGHT
               const centerX = boxWidth / 2
               const isSelf = node.member.id === selfMemberId
+              // 印刷・PDFのスライスにも同じ関数を使うので、選択の強調は画面だけに出す
+              const isSelected = idPrefix === 'screen' && node.member.id === selectedMemberId
               const isCollapsed = collapsedRootIds.has(node.member.id)
               const hiddenCount = hiddenSetByRoot.get(node.member.id)?.size ?? 0
               const hasChildren = childrenOf.has(node.member.id)
@@ -666,14 +673,17 @@ export default function FamilyTreeView({
                   key={node.member.id}
                   transform={`translate(${nodeX}, ${nodeY})`}
                   filter={`url(#${idPrefix}-node-shadow)`}
+                  onClick={onSelectMember ? () => onSelectMember(node.member.id) : undefined}
+                  style={onSelectMember ? { cursor: 'pointer' } : undefined}
                 >
+                  {onSelectMember && <title>クリックで詳細を開く</title>}
                   <rect
                     width={boxWidth}
                     height={boxHeight}
                     rx={12}
                     fill={colors.bg}
-                    stroke={isSelf ? '#f59e0b' : colors.border}
-                    strokeWidth={isSelf ? 2 : 1.25}
+                    stroke={isSelected ? '#2563eb' : isSelf ? '#f59e0b' : colors.border}
+                    strokeWidth={isSelected ? 2.5 : isSelf ? 2 : 1.25}
                   />
                   {node.member.photo ? (
                     <>

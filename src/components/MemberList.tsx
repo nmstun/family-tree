@@ -5,6 +5,7 @@ import { FamilyMember, Marriage, ParentChildRelation } from '@/types'
 import { calculateAge, calculateGrade, formatAgeSummary } from '@/utils/age'
 import { sortMembersByName } from '@/utils/sortMembers'
 import { fullName, initial } from '@/utils/memberName'
+import { deletionImpact } from '@/utils/memberDeletion'
 import MemberForm from './MemberForm'
 import { Search, Star, Pencil, Trash2, Users } from 'lucide-react'
 import { Avatar, Badge, Button, Card, EmptyState, useConfirm, CONTROL_CLASS } from './ui'
@@ -60,27 +61,11 @@ export default function MemberList({
     })
   }, [sortedMembers, query, otoshidamaOnly])
 
-  // メンバーを消すと配偶者・親子関係も連動して消える（DB側の ON DELETE CASCADE）。
-  // 取り消せない操作なので、何がどれだけ消えるのかを具体的に示してから確認する。
   const handleDelete = async (member: FamilyMember) => {
-    const marriageCount = marriages.filter(
-      (m) => m.spouse1Id === member.id || m.spouse2Id === member.id
-    ).length
-    const relationCount = parentChildRelations.filter(
-      (r) => r.parentId === member.id || r.childId === member.id
-    ).length
-
-    const affected = [
-      marriageCount > 0 && `配偶者関係 ${marriageCount}件`,
-      relationCount > 0 && `親子関係 ${relationCount}件`,
-    ].filter(Boolean)
-
+    const { title, message } = deletionImpact(member, marriages, parentChildRelations)
     const ok = await confirm({
-      title: `${fullName(member)} を削除しますか？`,
-      message:
-        affected.length > 0
-          ? `${affected.join('と')}もあわせて削除されます。\nこの操作は取り消せません。`
-          : 'この操作は取り消せません。',
+      title,
+      message,
       confirmLabel: '削除する',
       destructive: true,
     })
