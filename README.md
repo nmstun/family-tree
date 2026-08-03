@@ -22,6 +22,18 @@
 - ➖ **家系図の折りたたみ** - 家系図が大きくなりすぎたとき、任意のメンバーをクリックしてその子孫グループ（子・孫とその配偶者）を折りたたんで非表示にできる。折りたたみ状態は自分のブラウザにのみ保存され、他の共同編集者の表示には影響しない
 - 📥 **JSON エクスポート / インポート** - 家系図データ（写真含む全情報）を JSON 形式でダウンロード可能。エクスポートした JSON を読み込んで家系図を完全に復元することも可能（既存データは上書きされるため確認ダイアログあり）。インポートは既存メンバーを全削除してから挿入するため、削除の前に構造（3つの配列が揃っているか、関係が実在するメンバーを指しているか）を検証し、不正なファイルでは何も消さずにエラーを出す
 
+## アプリアイコン
+
+タブや iOS のホーム画面に表示されるアイコンは、夫婦2ノードから子3ノードへ線が伸びる家系図を深緑（`#2d6a4f`）と生成りで描いたもの。実体は `app/icon.svg` の1ファイルで、`app/apple-icon.png`（180px）と `public/icon-192.png` / `public/icon-512.png` はそこから `rsvg-convert` で書き出している。図形の変更は SVG 側だけを直し、PNG を作り直す。
+
+```sh
+rsvg-convert -w 180 -h 180 app/icon.svg -o app/apple-icon.png
+rsvg-convert -w 192 -h 192 app/icon.svg -o public/icon-192.png
+rsvg-convert -w 512 -h 512 app/icon.svg -o public/icon-512.png
+```
+
+`app/manifest.ts` がホーム画面追加時の名称とアイコンを定義する（Next.js が `/manifest.webmanifest` として配信し、`link` タグも自動で挿入する）。未ログインの `/login` 画面からもホーム画面に追加できるよう、`middleware.ts` の `matcher` で `manifest.webmanifest` を認証リダイレクトの対象外にしている。
+
 ## 技術スタック
 
 - **フロントエンド**: Next.js 14 (App Router) + React 18
