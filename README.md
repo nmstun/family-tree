@@ -102,7 +102,8 @@ npm test
 # ├ relationValidation … 関係追加時の検証（「関係」タブとサイドパネルで共通）
 # ├ memberDeletion   … 削除時に巻き添えになる関係の数え方と確認文言
 # ├ jsonExport      … インポート時の検証（壊れたJSONで家系図を消さないこと）
-# └ memberName      … 氏名・頭文字・並べ替え
+# ├ memberName      … 氏名・頭文字・並べ替え
+# └ MemberDetailPanel … 編集中に別の人へ切り替えたとき、前の人の内容で上書きしないこと
 
 # ビルド
 npm run build
@@ -113,6 +114,8 @@ npm start
 # ESLint
 npm run lint
 ```
+
+`.test.tsx` は画面部品のテストで、ファイル先頭の `// @vitest-environment jsdom` によりブラウザ相当の環境で動きます（`@testing-library/react`）。純粋関数のテストでは捕まえられない「コンポーネントの状態が prop の変化に追従していない」種類の不具合を対象にしています。
 
 ## 依存関係の更新
 

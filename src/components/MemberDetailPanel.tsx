@@ -63,6 +63,23 @@ export default function MemberDetailPanel({
   const [pickedId, setPickedId] = useState('')
   const [error, setError] = useState<string | null>(null)
 
+  // 表示対象が変わったら、開いていたフォームをすべて閉じる。
+  //
+  // これが無いと、編集中に家系図の別のノードをクリックしたとき
+  // member だけが差し替わり、フォームの中身と editing はそのまま残る。
+  // その状態で「更新」を押すと、新しく選んだ人のIDに前の人の内容が
+  // 書き込まれてしまう（本番で1人ぶんの氏名・生没年・写真が失われた）。
+  // 関係の追加フォームも同様に、前の人向けに選んだ相手が
+  // 新しく選んだ人の関係として登録されてしまう。
+  const [shownMemberId, setShownMemberId] = useState(member.id)
+  if (shownMemberId !== member.id) {
+    setShownMemberId(member.id)
+    setEditing(false)
+    setAdding(null)
+    setPickedId('')
+    setError(null)
+  }
+
   const byId = useMemo(() => new Map(members.map((m) => [m.id, m])), [members])
 
   const related = useMemo(() => {
@@ -123,6 +140,8 @@ export default function MemberDetailPanel({
     return (
       <PanelShell title="メンバーを編集" onClose={onClose}>
         <MemberForm
+          // 入力欄の値はマウント時にしか読まれないため、人が変わったら作り直す
+          key={member.id}
           initialMember={member}
           onSubmit={(updates) => {
             onUpdateMember(member.id, updates)
