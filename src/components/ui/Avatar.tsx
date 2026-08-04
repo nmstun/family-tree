@@ -26,14 +26,39 @@ interface AvatarProps {
   /** 写真が無いときに出す1文字（utils/memberName の initial() を想定） */
   initial: string
   className?: string
+  /**
+   * 写真を押したときの動作（拡大表示を想定）。
+   * 渡したときだけ押せるようになり、写真が無い場合は何も起きない。
+   */
+  onPhotoClick?: () => void
+  /** 押せるときの説明。読み上げとツールチップに使う */
+  photoLabel?: string
 }
 
-export default function Avatar({ photo, initial, className }: AvatarProps) {
+export default function Avatar({
+  photo,
+  initial,
+  className,
+  onPhotoClick,
+  photoLabel,
+}: AvatarProps) {
   const base = 'h-9 w-9 shrink-0 rounded-full object-cover'
   if (photo) {
     // 写真はDBに base64 で持っているため next/image では最適化できない
     // eslint-disable-next-line @next/next/no-img-element
-    return <img src={photo} alt="" className={cn(base, className)} />
+    const image = <img src={photo} alt="" className={cn(base, className)} />
+    if (!onPhotoClick) return image
+    return (
+      <button
+        type="button"
+        onClick={onPhotoClick}
+        aria-label={photoLabel ?? '写真を拡大する'}
+        title={photoLabel ?? '写真を拡大する'}
+        className="shrink-0 rounded-full transition-opacity hover:opacity-80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900"
+      >
+        {image}
+      </button>
+    )
   }
   return (
     <div

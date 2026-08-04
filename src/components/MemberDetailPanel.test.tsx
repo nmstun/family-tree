@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { render, screen, cleanup, fireEvent } from '@testing-library/react'
+import { render, screen, cleanup, fireEvent, within } from '@testing-library/react'
 import MemberDetailPanel from './MemberDetailPanel'
 import { FamilyMember, Marriage, ParentChildRelation } from '@/types'
 
@@ -22,6 +22,22 @@ const ユキミ: FamilyMember = {
   deathDate: '2016-11-20',
   createdAt: 2,
 }
+const 写真つき: FamilyMember = {
+  id: 'withphoto',
+  lastName: '宮本',
+  firstName: '太郎',
+  gender: 'male',
+  photo: 'data:image/png;base64,iVBORw0KGgo=',
+  createdAt: 4,
+}
+const 写真つき2: FamilyMember = {
+  id: 'withphoto2',
+  lastName: '宮本',
+  firstName: '次郎',
+  gender: 'male',
+  photo: 'data:image/png;base64,iVBORw0KGgo=',
+  createdAt: 5,
+}
 const third: FamilyMember = {
   id: 'other',
   lastName: '宮本',
@@ -30,7 +46,7 @@ const third: FamilyMember = {
   createdAt: 3,
 }
 
-const members = [ヤスヱ, ユキミ, third]
+const members = [ヤスヱ, ユキミ, third, 写真つき, 写真つき2]
 const marriages: Marriage[] = []
 const relations: ParentChildRelation[] = []
 
@@ -113,6 +129,35 @@ describe('MemberDetailPanel', () => {
 
     view.unmount()
     expect(onEditingChange).toHaveBeenLastCalledWith(false)
+  })
+
+  it('写真を押すと拡大表示が開く', () => {
+    setup(写真つき)
+    expect(screen.queryByRole('dialog')).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: '宮本 太郎の写真を拡大する' }))
+
+    const dialog = screen.getByRole('dialog')
+    expect(dialog.getAttribute('aria-label')).toBe('宮本 太郎の写真')
+    // パネル自体にも「閉じる」があるので、拡大表示の中に絞って押す
+    fireEvent.click(within(dialog).getByRole('button', { name: '閉じる' }))
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('写真が無い人は押せる要素にしない', () => {
+    setup(ヤスヱ)
+    expect(screen.queryByRole('button', { name: /写真を拡大する/ })).toBeNull()
+  })
+
+  it('拡大表示中に別の人へ切り替わったら閉じる', () => {
+    // 切り替え先も写真を持っている場合、閉じ忘れると
+    // 前の人の写真を見ていたつもりが別人の写真に差し替わる
+    const { props, view } = setup(写真つき)
+    fireEvent.click(screen.getByRole('button', { name: '宮本 太郎の写真を拡大する' }))
+    expect(screen.getByRole('dialog')).toBeTruthy()
+
+    view.rerender(<MemberDetailPanel {...props} member={写真つき2} />)
+    expect(screen.queryByRole('dialog')).toBeNull()
   })
 
   it('関係の追加フォームも、人が切り替わったら閉じる', () => {

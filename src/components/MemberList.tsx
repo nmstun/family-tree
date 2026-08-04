@@ -8,7 +8,16 @@ import { fullName, initial } from '@/utils/memberName'
 import { deletionImpact } from '@/utils/memberDeletion'
 import MemberForm from './MemberForm'
 import { Search, Star, Pencil, Trash2, Users } from 'lucide-react'
-import { Avatar, Badge, Button, Card, EmptyState, useConfirm, CONTROL_CLASS } from './ui'
+import {
+  Avatar,
+  Badge,
+  Button,
+  Card,
+  EmptyState,
+  PhotoViewer,
+  useConfirm,
+  CONTROL_CLASS,
+} from './ui'
 
 const OTOSHIDAMA_MAX_AGE = 22
 
@@ -46,6 +55,8 @@ export default function MemberList({
   const [editingId, setEditingId] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const [otoshidamaOnly, setOtoshidamaOnly] = useState(false)
+  // 拡大表示中の写真の持ち主。一覧のアイコンは小さく顔が判別できないため
+  const [photoOf, setPhotoOf] = useState<FamilyMember | null>(null)
   const { confirm, dialog } = useConfirm()
 
   const sortedMembers = useMemo(() => sortMembersByName(members), [members])
@@ -125,7 +136,12 @@ export default function MemberList({
                 key={member.id}
                 className="group flex items-center gap-3 px-3 py-2 transition-colors hover:bg-neutral-50"
               >
-                <Avatar photo={member.photo} initial={initial(member)} />
+                <Avatar
+                  photo={member.photo}
+                  initial={initial(member)}
+                  onPhotoClick={() => setPhotoOf(member)}
+                  photoLabel={`${fullName(member)}の写真を拡大する`}
+                />
 
                 <div className="min-w-0 flex-1">
                   <p className="flex items-center gap-1.5 truncate text-sm font-medium text-neutral-900">
@@ -179,6 +195,13 @@ export default function MemberList({
       )}
 
       {dialog}
+      {photoOf?.photo && (
+        <PhotoViewer
+          src={photoOf.photo}
+          name={fullName(photoOf)}
+          onClose={() => setPhotoOf(null)}
+        />
+      )}
     </div>
   )
 }

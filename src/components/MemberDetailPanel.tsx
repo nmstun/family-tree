@@ -8,7 +8,7 @@ import { sortMembersByName } from '@/utils/sortMembers'
 import { validateMarriage, validateParentChild } from '@/utils/relationValidation'
 import MemberForm from './MemberForm'
 import { Heart, GitBranch, Pencil, Plus, Star, Trash2, Users, X } from 'lucide-react'
-import { Alert, Avatar, Button, CONTROL_SM_CLASS, cn } from './ui'
+import { Alert, Avatar, Button, PhotoViewer, CONTROL_SM_CLASS, cn } from './ui'
 
 interface MemberDetailPanelProps {
   member: FamilyMember
@@ -69,6 +69,8 @@ export default function MemberDetailPanel({
   const [adding, setAdding] = useState<RelationKind | null>(null)
   const [pickedId, setPickedId] = useState('')
   const [error, setError] = useState<string | null>(null)
+  // 写真の拡大表示。一覧や家系図では小さすぎて顔が判別できないため
+  const [viewingPhoto, setViewingPhoto] = useState(false)
 
   // 表示対象が変わったら、開いていたフォームをすべて閉じる。
   //
@@ -85,6 +87,7 @@ export default function MemberDetailPanel({
     setAdding(null)
     setPickedId('')
     setError(null)
+    setViewingPhoto(false)
   }
 
   useEffect(() => {
@@ -175,11 +178,20 @@ export default function MemberDetailPanel({
 
   return (
     <PanelShell title="メンバーの詳細" onClose={onClose}>
+      {viewingPhoto && member.photo && (
+        <PhotoViewer
+          src={member.photo}
+          name={fullName(member)}
+          onClose={() => setViewingPhoto(false)}
+        />
+      )}
       <div className="flex items-center gap-3">
         <Avatar
           photo={member.photo}
           initial={initial(member)}
           className="h-12 w-12"
+          onPhotoClick={() => setViewingPhoto(true)}
+          photoLabel={`${fullName(member)}の写真を拡大する`}
         />
         <div className="min-w-0">
           <p className="truncate text-[15px] font-semibold text-neutral-900">{fullName(member)}</p>
