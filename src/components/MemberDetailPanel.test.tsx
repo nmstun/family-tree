@@ -88,6 +88,33 @@ describe('MemberDetailPanel', () => {
     expect(screen.getByDisplayValue('1926-11-15')).toBeTruthy()
   })
 
+  it('編集の開始・終了を呼び出し側へ知らせる（この間ノード選択を止めるため）', () => {
+    const onEditingChange = vi.fn()
+    const { props } = setup(ヤスヱ)
+    cleanup()
+    render(<MemberDetailPanel {...props} onEditingChange={onEditingChange} />)
+
+    expect(onEditingChange).toHaveBeenLastCalledWith(false)
+
+    fireEvent.click(screen.getByRole('button', { name: '編集' }))
+    expect(onEditingChange).toHaveBeenLastCalledWith(true)
+
+    fireEvent.click(screen.getByRole('button', { name: 'キャンセル' }))
+    expect(onEditingChange).toHaveBeenLastCalledWith(false)
+  })
+
+  it('パネルを閉じたときも編集中を解除する（ノード選択が止まったままにならない）', () => {
+    const onEditingChange = vi.fn()
+    const { props } = setup(ヤスヱ)
+    cleanup()
+    const view = render(<MemberDetailPanel {...props} onEditingChange={onEditingChange} />)
+    fireEvent.click(screen.getByRole('button', { name: '編集' }))
+    expect(onEditingChange).toHaveBeenLastCalledWith(true)
+
+    view.unmount()
+    expect(onEditingChange).toHaveBeenLastCalledWith(false)
+  })
+
   it('関係の追加フォームも、人が切り替わったら閉じる', () => {
     // 開いたままだと、前の人向けに選んだ相手が新しい人の関係として登録される
     const { props, view } = setup(ユキミ)

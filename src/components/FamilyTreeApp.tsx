@@ -61,6 +61,9 @@ export default function FamilyTreeApp() {
   const [activeTab, setActiveTab] = useState<TabId>('members')
   // 家系図上で開いているメンバー（サイドパネルの対象）
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null)
+  // 編集フォームを開いている間は家系図のノード選択を止める。
+  // 選択が変わるとフォームを閉じる仕様のため、入力中の内容が消えてしまうため。
+  const [editingMember, setEditingMember] = useState(false)
   const [importing, setImporting] = useState(false)
   const [importError, setImportError] = useState<string | null>(null)
   const importFileInputRef = useRef<HTMLInputElement>(null)
@@ -246,7 +249,7 @@ export default function FamilyTreeApp() {
                 parentChildRelations={tree.parentChildRelations}
                 selfMemberId={selfMemberId}
                 selectedMemberId={selectedMemberId}
-                onSelectMember={setSelectedMemberId}
+                onSelectMember={editingMember ? undefined : setSelectedMemberId}
               />
             </div>
             {selectedMember && (
@@ -266,6 +269,7 @@ export default function FamilyTreeApp() {
                 onAddParentChild={addParentChild}
                 onRemoveParentChild={removeParentChild}
                 onRequestDelete={handleDeleteFromPanel}
+                onEditingChange={setEditingMember}
               />
             )}
           </Card>

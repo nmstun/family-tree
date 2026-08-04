@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { FamilyMember, Marriage, ParentChildRelation } from '@/types'
 import { fullName, initial } from '@/utils/memberName'
 import { formatAgeSummary } from '@/utils/age'
@@ -26,6 +26,12 @@ interface MemberDetailPanelProps {
   onAddParentChild: (parentId: string, childId: string) => void
   onRemoveParentChild: (parentId: string, childId: string) => void
   onRequestDelete: (member: FamilyMember) => void
+  /**
+   * 編集フォームを開いている間 true。
+   * 呼び出し側はこの間、家系図のノード選択を止める
+   * （選択が変わるとフォームを閉じるため、入力中の内容が消えてしまう）。
+   */
+  onEditingChange?: (editing: boolean) => void
 }
 
 type RelationKind = 'spouse' | 'parent' | 'child'
@@ -56,6 +62,7 @@ export default function MemberDetailPanel({
   onAddParentChild,
   onRemoveParentChild,
   onRequestDelete,
+  onEditingChange,
 }: MemberDetailPanelProps) {
   const [editing, setEditing] = useState(false)
   // どの関係を追加しようとしているか（開いている追加フォーム）
@@ -79,6 +86,13 @@ export default function MemberDetailPanel({
     setPickedId('')
     setError(null)
   }
+
+  useEffect(() => {
+    onEditingChange?.(editing)
+  }, [editing, onEditingChange])
+
+  // パネルごと閉じられたときも、呼び出し側の「編集中」を必ず戻す
+  useEffect(() => () => onEditingChange?.(false), [onEditingChange])
 
   const byId = useMemo(() => new Map(members.map((m) => [m.id, m])), [members])
 
@@ -139,6 +153,10 @@ export default function MemberDetailPanel({
   if (editing) {
     return (
       <PanelShell title="メンバーを編集" onClose={onClose}>
+        <p className="mb-3 rounded-lg bg-amber-50 px-2.5 py-2 text-[12px] leading-relaxed text-amber-800">
+          編集中は家系図のノードを選べません。別の人を開くには、先に更新するか
+          キャンセルしてください。
+        </p>
         <MemberForm
           // 入力欄の値はマウント時にしか読まれないため、人が変わったら作り直す
           key={member.id}
